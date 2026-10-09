@@ -32,7 +32,9 @@ CONFIG_PACKAGE_docker=y
 CONFIG_PACKAGE_dockerd=y
 
 #--- extras ---
-CONFIG_PACKAGE_miniupnpd=y
+# 官方 miniupnpd 已按后端拆包, 不存在名为 "miniupnpd" 的包; firewall4 = nftables,
+# 所以取 miniupnpd-nftables（写成 miniupnpd 会被 defconfig 静默丢弃）。
+CONFIG_PACKAGE_miniupnpd-nftables=y
 CONFIG_PACKAGE_luci-app-upnp=y
 CONFIG_PACKAGE_ddns-scripts=y
 CONFIG_PACKAGE_luci-app-ddns=y
