@@ -1,0 +1,288 @@
+--- a/drivers/net/dsa/realtek/realtek.h
++++ b/drivers/net/dsa/realtek/realtek.h
+@@ -84,6 +84,8 @@
+ 	struct dsa_switch	ds;
+ 	struct irq_domain	*irqdomain;
+ 	bool			leds_disabled;
++	bool			vlan_pvid_is_vid;
++	bool			family_d;
+ 
+ 	unsigned int		cpu_port;
+ 	unsigned int		num_ports;
+--- a/drivers/net/dsa/realtek/rtl8365mb_main.c
++++ b/drivers/net/dsa/realtek/rtl8365mb_main.c
+@@ -707,6 +707,12 @@
+ 	const struct rtl8365mb_extint extints[RTL8365MB_MAX_NUM_EXTINTS];
+ 	const struct rtl8365mb_jam_tbl_entry *jam_table;
+ 	size_t jam_size;
++	/* Family D (RTL8367S-VB / RTL8376RB): PVID is stored as a direct
++	 * VID in a per-port register instead of a VLAN MC index, and the
++	 * RGMII external interface needs a different initialization.
++	 */
++	bool vlan_pvid_is_vid;
++	bool family_d;
+ };
+ 
+ /* Chip info for each supported switch in the family */
+@@ -762,6 +768,22 @@
+ 		.jam_table = rtl8365mb_init_jam_8365mb_vc,
+ 		.jam_size = ARRAY_SIZE(rtl8365mb_init_jam_8365mb_vc),
+ 	},
++	{
++		.name = "RTL8376RB",
++		.chip_id = 0x6642,
++		.chip_ver = 0x0030,
++		.extints = {
++			/* Family D: CPU port 6 -> extif0, CPU port 7 -> extif1 */
++			{ 6, 0, PHY_INTF(MII) | PHY_INTF(TMII) |
++				PHY_INTF(RMII) | PHY_INTF(RGMII) },
++			{ 7, 1, PHY_INTF(MII) | PHY_INTF(TMII) |
++				PHY_INTF(RMII) | PHY_INTF(RGMII) },
++		},
++		.jam_table = rtl8365mb_init_jam_8365mb_vc,
++		.jam_size = ARRAY_SIZE(rtl8365mb_init_jam_8365mb_vc),
++		.vlan_pvid_is_vid = true,
++		.family_d = true,
++	},
+ };
+ 
+ enum rtl8365mb_stp_state {
+@@ -1156,6 +1178,48 @@
+ 	if (ret)
+ 		return ret;
+ 
++	/* Family D (RTL8367S-VB / RTL8376RB): extra RGMII interface setup,
++	 * required for the 125 MHz RGMII clock to be generated on EXT1.
++	 */
++	if (priv->family_d) {
++		u32 top_con0;
++
++		/* CHIP_DEBUG0: RGMII pad type for EXT1 (SEL33, DRI_RG, SLR) */
++		ret = regmap_update_bits(priv->map, 0x1303,
++					 BIT(9) | BIT(6) | BIT(4) | BIT(1),
++					 BIT(9) | BIT(6) | BIT(1));
++		if (ret)
++			return ret;
++
++		/* CHIP_DEBUG1: RGMII pad drive strength for EXT1 */
++		ret = regmap_update_bits(priv->map, 0x1304,
++					 GENMASK(14, 8),
++					 (7 << 12) | (7 << 8));
++		if (ret)
++			return ret;
++
++		/* Clear the EXT1 RGMII TX delay */
++		ret = regmap_update_bits(priv->map, 0x13f9, 0x38, 0);
++		if (ret)
++			return ret;
++
++		/* Route MAC7 (CPU port) to EXT1 if MAC4 is not using it */
++		ret = regmap_read(priv->map, 0x1d70, &top_con0);
++		if (ret)
++			return ret;
++		if (!(top_con0 & 0x1000)) {
++			ret = regmap_update_bits(priv->map, 0x1d70,
++						 0x2000, 0x2000);
++			if (ret)
++				return ret;
++		}
++
++		/* Disable the SerDes (SDS1) */
++		ret = regmap_update_bits(priv->map, 0x1d78, 0x1f, 0x1f);
++		if (ret)
++			return ret;
++	}
++
+ 	return 0;
+ }
+ 
+@@ -1599,6 +1663,34 @@
+ 		r_rx_pause = 0;
+ 		r_speed = 0;
+ 		r_duplex = 0;
++	}
++
++	/* Family D (RTL8367S-VB / RTL8376RB): the external interface force
++	 * is programmed in the per-port MAC0_FORCE_SELECT registers with the
++	 * speed field duplicated in the high bits (11:10).
++	 */
++	if (priv->family_d) {
++		val = FIELD_PREP(RTL8365MB_DIGITAL_INTERFACE_FORCE_SPEED_MASK,
++				  r_speed) |
++		      FIELD_PREP(RTL8365MB_DIGITAL_INTERFACE_FORCE_TXPAUSE_MASK,
++				 r_tx_pause) |
++		      FIELD_PREP(RTL8365MB_DIGITAL_INTERFACE_FORCE_RXPAUSE_MASK,
++				 r_rx_pause) |
++		      FIELD_PREP(RTL8365MB_DIGITAL_INTERFACE_FORCE_LINK_MASK,
++				 r_link) |
++		      FIELD_PREP(RTL8365MB_DIGITAL_INTERFACE_FORCE_DUPLEX_MASK,
++				 r_duplex) |
++		      FIELD_PREP(0x3000, r_speed);
++		ret = regmap_write(priv->map, 0x12c0 + port, val);
++		if (ret)
++			return ret;
++
++		ret = regmap_write(priv->map, 0x12c8 + port,
++				   link ? 0xffff : 0x0000);
++		if (ret)
++			return ret;
++
++		return 0;
+ 	}
+ 
+ 	val = FIELD_PREP(RTL8365MB_DIGITAL_INTERFACE_FORCE_EN_MASK, 1) |
+@@ -3265,6 +3357,8 @@
+ 	dev_info(priv->dev, "found an %s switch\n", mb->chip_info->name);
+ 
+ 	priv->num_ports = RTL8365MB_MAX_NUM_PORTS;
++	priv->vlan_pvid_is_vid = mb->chip_info->vlan_pvid_is_vid;
++	priv->family_d = mb->chip_info->family_d;
+ 	mb->priv = priv;
+ 	mb->cpu.trap_port = RTL8365MB_MAX_NUM_PORTS;
+ 	mb->cpu.insert = RTL8365MB_CPU_INSERT_TO_ALL;
+--- a/drivers/net/dsa/realtek/rtl8365mb_vlan.c
++++ b/drivers/net/dsa/realtek/rtl8365mb_vlan.c
+@@ -113,6 +113,12 @@
+ #define   RTL8365MB_VLAN_PVID_CTRL_PORT_MCIDX_MASK(_p) \
+ 		(0x1F << RTL8365MB_VLAN_PVID_CTRL_PORT_MCIDX_OFFSET(_p))
+ 
++/* Family D (RTL8367S-VB / RTL8376RB): one PVID register per port holding
++ * the VLAN ID directly (12 bits) instead of a VLAN MC index.
++ */
++#define RTL8365MB_VLAN_PVID_CTRL_REG_D(_p)		(0x0700 + (_p))
++#define   RTL8365MB_VLAN_PVID_CTRL_D_VID_MASK		0x0FFF
++
+ /* Frame type filtering registers */
+ #define RTL8365MB_VLAN_ACCEPT_FRAME_TYPE_BASE	0x07aa
+ #define RTL8365MB_VLAN_ACCEPT_FRAME_TYPE_REG(port) \
+@@ -629,6 +635,15 @@
+ 
+ 	dev_dbg(priv->dev, "set PVID IDX %d on port %d\n", vlanmc_idx, port);
+ 
++	if (priv->vlan_pvid_is_vid) {
++		val = vlanmc_idx & RTL8365MB_VLAN_PVID_CTRL_D_VID_MASK;
++		ret = regmap_write(priv->map,
++				   RTL8365MB_VLAN_PVID_CTRL_REG_D(port), val);
++		if (ret)
++			return ret;
++		return 0;
++	}
++
+ 	val = vlanmc_idx << RTL8365MB_VLAN_PVID_CTRL_PORT_MCIDX_OFFSET(port);
+ 	ret = regmap_update_bits(priv->map,
+ 				 RTL8365MB_VLAN_PVID_CTRL_REG(port),
+@@ -646,11 +661,24 @@
+ {
+ 	int ret;
+ 
++	memset(vlanmc, 0, sizeof(*vlanmc));
++
++	if (priv->vlan_pvid_is_vid) {
++		u32 data;
++
++		ret = regmap_read(priv->map,
++				  RTL8365MB_VLAN_PVID_CTRL_REG_D(port), &data);
++		if (ret)
++			return ret;
++
++		vlanmc->evid = data & RTL8365MB_VLAN_PVID_CTRL_D_VID_MASK;
++		*vlanmc_idx = 0;
++		return 0;
++	}
++
+ 	ret = rtl8365mb_vlan_port_get_pvid_idx(priv, port, vlanmc_idx);
+ 	if (ret)
+ 		return ret;
+-
+-	memset(vlanmc, 0, sizeof(*vlanmc));
+ 
+ 	if (!*vlanmc_idx)
+ 		return 0;
+@@ -776,6 +804,40 @@
+ 	int ret;
+ 
+ 	lockdep_assert_held(&priv->vlan_lock);
++
++	if (priv->vlan_pvid_is_vid) {
++		u16 prev_vid;
++
++		ret = rtl8365mb_vlan_port_get_pvid(priv, port, &prev_vid);
++		if (ret) {
++			dev_err(priv->dev, "Failed to read current PVID\n");
++			return ret;
++		}
++
++		ret = rtl8365mb_vlan_port_get_framefilter(priv, port,
++							  &prev_accepted_frame);
++		if (ret) {
++			dev_err(priv->dev, "Failed to get current framefilter\n");
++			return ret;
++		}
++
++		ret = rtl8365mb_vlan_port_set_pvid(priv, port, vid);
++		if (ret) {
++			dev_err(priv->dev, "Failed to set port PVID\n");
++			return ret;
++		}
++
++		accepted_frame = RTL8365MB_FRAME_TYPE_ANY_FRAME;
++		ret = rtl8365mb_vlan_port_set_framefilter(priv, port,
++							  accepted_frame);
++		if (ret) {
++			dev_err(priv->dev, "Failed to set port frame filter\n");
++			(void)rtl8365mb_vlan_port_set_pvid(priv, port, prev_vid);
++			return ret;
++		}
++
++		return 0;
++	}
+ 
+ 	/* Read the old PVID exclusively to undo in case of error */
+ 	ret = rtl8365mb_vlan_get_pvid_mc(priv, port, &prev_vlanmc_idx,
+@@ -879,6 +941,46 @@
+ 
+ 	lockdep_assert_held(&priv->vlan_lock);
+ 
++	if (priv->vlan_pvid_is_vid) {
++		u16 prev_vid;
++
++		ret = rtl8365mb_vlan_port_get_pvid(priv, port, &prev_vid);
++		if (ret) {
++			dev_err(priv->dev, "Failed to read current PVID\n");
++			return ret;
++		}
++
++		/* Port is not using this PVID. Nothing to remove. */
++		if (prev_vid != vid)
++			return 0;
++
++		ret = rtl8365mb_vlan_port_get_framefilter(priv, port,
++							  &prev_accepted_frame);
++		if (ret) {
++			dev_err(priv->dev, "Failed to get current framefilter\n");
++			return ret;
++		}
++
++		if (dsa_port_is_vlan_filtering(dsa_to_port(ds, port))) {
++			accepted_frame = RTL8365MB_FRAME_TYPE_TAGGED_ONLY;
++			ret = rtl8365mb_vlan_port_set_framefilter(priv, port,
++								  accepted_frame);
++			if (ret) {
++				dev_err(priv->dev,
++					"Failed to set port frame filter\n");
++				return ret;
++			}
++		}
++
++		ret = rtl8365mb_vlan_port_set_pvid(priv, port, 0);
++		if (ret) {
++			dev_err(priv->dev, "Failed to set port PVID to 0\n");
++			return ret;
++		}
++
++		return 0;
++	}
++
+ 	ret = rtl8365mb_vlan_get_pvid_mc(priv, port, &vlanmc_idx,
+ 					 &vlanmc);
+ 	if (ret) {

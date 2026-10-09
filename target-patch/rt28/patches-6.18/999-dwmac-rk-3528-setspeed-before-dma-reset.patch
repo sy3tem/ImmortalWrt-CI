@@ -1,0 +1,12 @@
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c	2026-08-24 14:31:49.433315789 +0800
++++ drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c	2026-08-24 14:31:06.084397286 +0800
+@@ -1834,6 +1834,9 @@
+ 	case PHY_INTERFACE_MODE_RGMII_RXID:
+ 		dev_info(dev, "init for RGMII_RXID\n");
+ 		bsp_priv->ops->set_to_rgmii(bsp_priv, bsp_priv->tx_delay, 0);
++		/* Configure RGMII DIV1 (125MHz) before DMA reset */
++		if (bsp_priv->ops->set_speed)
++			bsp_priv->ops->set_speed(bsp_priv, bsp_priv->phy_iface, 1000);
+ 		break;
+ 	case PHY_INTERFACE_MODE_RGMII_TXID:
+ 		dev_info(dev, "init for RGMII_TXID\n");

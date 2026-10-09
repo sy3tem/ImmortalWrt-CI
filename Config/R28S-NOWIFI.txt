@@ -1,0 +1,19 @@
+# NanoPi R28S (RK3528A) — NO WiFi (wireless stack stripped)
+# Source : immortalwrt/immortalwrt @ master (official)
+# Image  : immortalwrt-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade.img.gz
+#          (identical name; the variant is identified by the release tag)
+#
+# Scripts/Settings.sh disables kmod-ath/mac80211/wpad/aic8800 for *-NOWIFI*.
+
+#--- target ---
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_friendlyarm_nanopi-r28s=y
+
+#--- partition layout ---
+CONFIG_TARGET_KERNEL_PARTSIZE=128
+CONFIG_TARGET_ROOTFS_PARTSIZE=1024
+CONFIG_TARGET_ROOTFS_EXT4FS=n
+
+#--- wired only: second port RTL8111H on PCIe ---
+CONFIG_PACKAGE_kmod-r8169=y

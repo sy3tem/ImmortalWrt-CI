@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MIT
+# Rockchip (RK3528A) build matrix.
+#
+# Devices : NanoPi R28S  (nanopi-r28s)   — Wi-Fi / no-Wi-Fi variants
+#           Hugsun RT28  (hugsun_rt28)   — 4-port + MT7916 Wi-Fi (single image)
+# Source  : immortalwrt/immortalwrt @ master
+
+name: RK-ALL
+
+on:
+  workflow_run:
+    workflows: ["Auto-Clean"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      CONFIGS:
+        description: 'JSON 数组，如 ["R28S-WIFI"]；留空则编译全部。'
+        required: false
+        type: string
+      PACKAGE:
+        description: '手动调整插件包，多个用换行符隔开。'
+        required: false
+        type: string
+      TEST:
+        description: '仅输出配置文件，不编译固件。'
+        default: 'false'
+        required: false
+        type: boolean
+
+permissions: write-all
+
+jobs:
+  config:
+    name: ${{matrix.CONFIG}}
+    strategy:
+      fail-fast: false
+      matrix:
+        CONFIG: ${{ fromJSON(inputs.CONFIGS || '["R28S-WIFI", "R28S-NOWIFI", "RT28"]') }}
+        SOURCE: [immortalwrt/immortalwrt]
+        BRANCH: [master]
+
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_CONFIG: ${{matrix.CONFIG}}
+      WRT_THEME: argon
+      WRT_NAME: DWRT
+      WRT_SSID: DWRT
+      WRT_WORD: 12345678
+      WRT_IP: 192.168.10.1
+      WRT_PW: password
+      WRT_REPO: https://github.com/${{matrix.SOURCE}}.git
+      WRT_BRANCH: ${{matrix.BRANCH}}
+      WRT_SOURCE: ${{matrix.SOURCE}}
+      WRT_PACKAGE: ${{inputs.PACKAGE}}
+      WRT_TEST: ${{inputs.TEST}}

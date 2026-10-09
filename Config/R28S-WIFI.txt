@@ -1,0 +1,25 @@
+# NanoPi R28S (RK3528A) — WITH WiFi (AIC8800 on SDIO0)
+# Source : immortalwrt/immortalwrt @ master (official)
+# Image  : immortalwrt-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade.img.gz
+
+#--- target ---
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_friendlyarm_nanopi-r28s=y
+
+#--- partition layout ---
+CONFIG_TARGET_KERNEL_PARTSIZE=128
+CONFIG_TARGET_ROOTFS_PARTSIZE=1024
+CONFIG_TARGET_ROOTFS_EXT4FS=n
+
+#--- WiFi (AIC8800, SDIO0) + Bluetooth ---
+CONFIG_PACKAGE_wpad-openssl=y
+CONFIG_PACKAGE_wifi-scripts=y
+# the AIC8800 kmods and firmware MUST be built in (not =m): modules are not
+# pre-installed onto the squashfs root, so =m would leave both radios dead.
+CONFIG_PACKAGE_kmod-aic8800-sdio=y
+CONFIG_PACKAGE_aic8800-sdio-firmware=y
+CONFIG_AIC8800_SDIO_BT_SUPPORT=y
+
+#--- second port: RTL8111H on PCIe (r8169 must be built in as well) ---
+CONFIG_PACKAGE_kmod-r8169=y

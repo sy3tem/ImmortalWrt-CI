@@ -1,0 +1,6 @@
+# 本机调试辅助脚本(不入库)
+_ssh_run.py
+*_ondevice.sh
+_test_config*.txt
+_job.json
+dist/

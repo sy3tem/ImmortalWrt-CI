@@ -1,0 +1,7 @@
+#!/bin/sh
+# Make luci-theme-argon the default theme and Chinese the default language
+uci set luci.main.mediaurlbase='/luci-static/argon'
+uci set luci.main.lang='zh-cn'
+uci commit luci
+
+exit 0

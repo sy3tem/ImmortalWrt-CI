@@ -1,0 +1,49 @@
+# ITV (IPTV) firewall zone — appended into /etc/config/firewall at build time
+# by Scripts/Inject-Common.sh, so the zone EXISTS in the shipped firewall config
+# from the very first boot (not created later by a script).
+#
+# Design notes (real-hardware verified on R28S + JDC):
+#   1) A DEDICATED zone matched by INTERFACE NAME, not by IP range.
+#      Reason: the wan zone's `list network 'wan'` only binds the uplink device,
+#      so multicast arriving on the IPTV port matches NO zone and gets dropped.
+#      Matching by interface is also operator-agnostic (multicast groups differ
+#      per ISP, so a fixed 224.0.0.0/4 rule is not portable).
+#   2) masq=0 / mtu_fix=0 — multicast must NOT go through fullcone NAT/conntrack.
+#      (this is a plain transparent forwarding zone for the IPTV port)
+#   3) forward=DROP — rtp2httpd terminates the stream ON the router (input ACCEPT);
+#      nothing needs to be forwarded across zones.
+#   4) Run-time pieces that depend on the interface DEVICE (multicast route
+#      224.0.0.0/4 -> itv, force_igmp_version=2) are handled by
+#      /etc/hotplug.d/iface/97-itv-multicast, because the itv interface may be
+#      created/renamed after first boot (VLAN / PPPoE / DHCP all supported).
+
+config zone
+	option name		itv
+	list   network		'itv'
+	option input		ACCEPT
+	option output		ACCEPT
+	option forward		DROP
+	option masq		0
+	option mtu_fix		0
+
+# --- Optional / disabled by default -------------------------------------------
+# Allow the LAN side to reach the router's rtp2httpd HTTP port explicitly
+# (zone input is already ACCEPT, so this is only needed if you later set
+#  itv input to REJECT). Uncomment to enable.
+#
+#config rule
+#	option name		Allow-ITV-HTTP
+#	option src		lan
+#	option proto		tcp
+#	option dest_port	5140
+#	option target		ACCEPT
+#
+# Allow IGMP (v2) inbound on the itv zone explicitly. The zone input policy is
+# already ACCEPT; kept here as documentation / fallback for REJECT policies.
+#
+#config rule
+#	option name		Allow-ITV-IGMP
+#	option src		itv
+#	option proto		igmp
+#	option family		ipv4
+#	option target		ACCEPT

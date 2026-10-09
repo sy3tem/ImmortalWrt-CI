@@ -1,0 +1,76 @@
+#!/bin/sh
+# RT28 defaults: LAN 192.168.20.1/24, hostname DWRT, WiFi DWRT / WPA3 / key 12345678
+
+# --- LAN management address (CIDR form; a bare IP makes netifd use /32) ---
+uci set network.lan.ipaddr='192.168.20.1/24'
+uci delete network.lan.netmask 2>/dev/null
+uci commit network
+
+# --- IPv6: auto ULA prefix (same as the stock firmware's config_generate).
+# LAN RA/SLAAC hands it out to clients. If the ISP delegates a PD prefix,
+# clients get public v6 through wan6. ---
+uci set network.globals.ula_prefix='auto'
+uci commit network
+uci set dhcp.lan.ra='server'
+uci set dhcp.lan.ra_slaac='1'
+uci set dhcp.lan.dhcpv6='server'
+uci commit dhcp
+# WAN side: request a /60 prefix delegation over the DHCPv6 client
+uci set network.wan6.proto='dhcpv6'
+uci set network.wan6.reqaddress='try'
+uci set network.wan6.reqprefix='60'
+uci commit network
+
+# --- Flow offloading (software NAT acceleration; RK3528 has no NSS HW) ---
+uci set firewall.@defaults[0].flow_offloading='1'
+uci commit firewall
+
+# --- TurboACC BBR congestion control on by default ---
+uci set turboacc.config.tcpcca='bbr'
+uci commit turboacc 2>/dev/null
+sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1
+echo 'net.ipv4.tcp_congestion_control=bbr' > /etc/sysctl.d/99-rt28-bbr.conf 2>/dev/null
+
+# --- uhttpd: disable https (LEDE default https listener crashes ustream-ssl
+# when the cert cannot be initialized); keep http only ---
+uci delete uhttpd.main.listen_https 2>/dev/null
+uci commit uhttpd 2>/dev/null
+
+# --- Hostname ---
+uci set system.@system[0].hostname='DWRT'
+uci commit system
+
+# --- WiFi: SSID DWRT, WPA3-SAE, key 12345678, sane radio settings ---
+# ensure a wireless config exists (first boot: radio auto-detected)
+[ -f /etc/config/wireless ] || wifi detect > /etc/config/wireless 2>/dev/null
+
+uci show wireless 2>/dev/null | sed -n 's/^\(wireless\.\(radio[0-9]*\)\)=wifi-device$/\2 \1/p' | while read -r name sec; do
+	band=$(uci get "$sec.band" 2>/dev/null)
+	case "$band" in
+	5g)
+		uci set "$sec.htmode=HE80"
+		uci set "$sec.channel=149"
+		;;
+	2g)
+		uci set "$sec.htmode=HE40"
+		uci set "$sec.channel=6"
+		;;
+	esac
+	uci set "$sec.txpower=max"
+	uci set "$sec.disabled=0"
+done
+
+uci show wireless 2>/dev/null | sed -n 's/^\(wireless\.[^=]*\)=wifi-iface$/\1/p' | while read -r sec; do
+	dev=$(uci get "$sec.device" 2>/dev/null)
+	band=$(uci get "wireless.$dev.band" 2>/dev/null)
+	case "$band" in
+	5g) uci set "$sec.ssid=DWRT-5G" ;;
+	*)  uci set "$sec.ssid=DWRT" ;;
+	esac
+	uci set "$sec.encryption=sae"
+	uci set "$sec.key=12345678"
+	uci set "$sec.disabled=0"
+done
+uci commit wireless
+
+exit 0

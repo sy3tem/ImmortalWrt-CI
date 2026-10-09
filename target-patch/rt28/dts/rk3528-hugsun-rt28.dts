@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/dts-v1/;
+
+#include "rk3528-hugsun-rt28.dtsi"
+
+/ {
+	model = "Hugsun RT28 AX3000 Router";
+	compatible = "hugsun,rk3528-rt28-route", "rockchip,rk3528";
+};
