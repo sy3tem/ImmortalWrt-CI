@@ -6,3 +6,8 @@
 CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq60xx=y
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y
+
+#--- NAND tools ---
+# 亚瑟是 SPI-NAND 机型。mtd-utils 的 nand-utils 带 `DEPENDS:=@NAND_SUPPORT`
+# 平台门控（rockchip 无裸 NAND，放 GENERAL 会被静默丢弃），故只在本机型的配置里请求。
+CONFIG_PACKAGE_nand-utils=y

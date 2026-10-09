@@ -11,6 +11,20 @@ CONFIG_TARGET_MULTI_PROFILE=y
 CONFIG_TARGET_PER_DEVICE_ROOTFS=y
 CONFIG_TARGET_ROOTFS_INITRAMFS=n
 
+#--- hardware feature gates (必须显式打开，否则下面相关 kmod/tool 被静默丢弃) ---
+# ImmortalWrt 把「设备类支持」拆成一组语义门控包 (package/system/hardware-support):
+#   audio-support / input-support / video-support / accel-support / hidraw-support ...
+# 关键点: kmod-* 与部分 userspace 用 **bare DEPENDS**（即硬 depends on）挂在门控包上,
+# 例如 sound.mk 的 `kmod-sound-core DEPENDS:=audio-support +kmod-input-core`、
+# libevdev 的 `DEPENDS:=input-support`。门控包 =n 时, 依赖它的整族包会在
+# `make defconfig` 产物里**整条消失**（连 "# ... is not set" 都不写），
+# 于是本文件请求的 kmod-sound-core / kmod-usb-audio / usbutils / usbmuxd 会被
+# 无声丢弃 —— 这属于"配置残留"必须消除。
+# （此前 R28S 只是碰巧: aic8800 的 `+AIC8800_SDIO_BT_SUPPORT:input-support`
+#   顺带选中了 input-support, 而 RT28/JDC 没开 aic8800 就全丢, 不可依赖。）
+CONFIG_PACKAGE_audio-support=y
+CONFIG_PACKAGE_input-support=y
+
 #--- kernel / netfilter modules ---
 CONFIG_PACKAGE_kmod-bonding=y
 CONFIG_PACKAGE_kmod-dsa=y
@@ -89,7 +103,9 @@ CONFIG_PACKAGE_ip-full=y
 CONFIG_PACKAGE_libimobiledevice=y
 CONFIG_PACKAGE_lsblk=y
 CONFIG_PACKAGE_mmc-utils=y
-CONFIG_PACKAGE_nand-utils=y
+# nand-utils 已移出本文件 → 各 JDCloud 设备配置。它的 Makefile 带
+# `DEPENDS:=@NAND_SUPPORT`（平台门控），rockchip 板子没有裸 NAND，在此请求
+# 只会被 defconfig 静默丢弃；只有 ipq60xx（SPI-NAND）设备才需要它。
 CONFIG_PACKAGE_openssh-keygen=y
 CONFIG_PACKAGE_openssh-sftp-server=y
 CONFIG_PACKAGE_openssl-util=y
