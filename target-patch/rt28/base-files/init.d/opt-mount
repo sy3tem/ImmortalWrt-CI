@@ -1,0 +1,24 @@
+#!/bin/sh /etc/rc.common
+# Create/mount the /opt partition from the unused eMMC space (LEDE RT28).
+# Runs late in boot. Partitioning happens only when mmcblk0p3 does not exist,
+# starting at 1280MB so it never touches the bootloader area.
+
+START=98
+
+start() {
+	[ -b /dev/mmcblk0 ] || return 0
+	mountpoint -q /opt && return 0
+
+	if [ ! -e /dev/mmcblk0p3 ]; then
+		# take all space from 1280MB to the end of the eMMC
+		parted --script /dev/mmcblk0 mkpart primary ext4 1280 100% || return 0
+		sleep 1
+		partprobe /dev/mmcblk0 2>/dev/null || partx -a /dev/mmcblk0 2>/dev/null
+		sleep 1
+		[ -b /dev/mmcblk0p3 ] || return 0
+		mkfs.ext4 /dev/mmcblk0p3 || return 0
+	fi
+
+	mkdir -p /opt
+	mount /dev/mmcblk0p3 /opt 2>/dev/null || return 0
+}

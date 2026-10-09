@@ -1,0 +1,8 @@
+# 亚瑟 JDCloud AX1800 Pro (RE-SS-01, IPQ6000) — WITH WiFi
+# Source : immortalwrt/immortalwrt @ master (official, device already present)
+# Image  : immortalwrt-qualcommax-ipq60xx-jdcloud_re-ss-01-squashfs-sysupgrade.bin
+
+#--- target ---
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y

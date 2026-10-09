@@ -1,0 +1,407 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Hugsun RT28 (hugsun,rk3528-rt28-route) router board - shared board definitions.
+ *
+ * Ported from the vendor 6.1 kernel dts (D:\workbuddy\rt28\kernel-6.1\...\rk3528-hugsun-rt28-route.dtsi)
+ * to ImmortalWrt 6.18 mainline. Label translations:
+ *   combphy_pu -> combphy, pcie2x1 -> pcie, usbdrd_dwc3 -> usb_host0_xhci,
+ *   u2phy_otg -> usb2phy_otg, u2phy_host -> usb2phy_host, usbdrd30 -> usb_host0_xhci.
+ *
+ * Hardware:
+ *  - SoC: Rockchip RK3528 (4x Cortex-A53)
+ *  - LAN1-3 + LAN4(WAN): RTL8367B switch on GMAC1 (RGMII CPU port, MDIO addr 29)
+ *  - WiFi: MT7916 on PCIe2x1
+ *  - eMMC boot, USB2, GPIO LEDs (active-low, verified on hardware), WPS button
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/pwm/pwm.h>
+
+#include "rk3528.dtsi"
+
+/ {
+	aliases {
+		ethernet0 = &gmac1;
+		mmc0 = &sdhci;
+		serial0 = &uart0;
+
+		/* sys LED: red while booting, blue when running */
+		led-boot = &work_led_red;
+		led-failsafe = &work_led_red;
+		led-running = &work_led_blue;
+		led-upgrade = &work_led_blue;
+	};
+
+	chosen {
+		stdout-path = "serial0:1500000n8";
+	};
+
+	/* Work (red/green/blue) + link (red/green/blue) LEDs, all active-low.
+	 * sys (work): red during boot, blue when running (green unused).
+	 * link: yellow (red+green) while WAN is down, blue when WAN is up
+	 * (toggled by /etc/hotplug.d/iface/99-rt28-link-led).
+	 */
+	gpio-leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&led_pins>;
+
+		work_led_red: work_red {
+			gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "none";
+			default-state = "off";
+		};
+
+		work_led_green: work_green {
+			gpios = <&gpio4 RK_PA1 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "none";
+			default-state = "off";
+		};
+
+		work_led_blue: work_blue {
+			gpios = <&gpio4 RK_PA0 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "none";
+			default-state = "off";
+		};
+
+		link_led_red: link_red {
+			gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "none";
+			default-state = "on";
+		};
+
+		link_led_green: link_green {
+			gpios = <&gpio4 RK_PA4 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "none";
+			default-state = "on";
+		};
+
+		link_led_blue: link_blue {
+			gpios = <&gpio4 RK_PA3 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "none";
+			default-state = "off";
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wps_key_pin>;
+
+		wps {
+			label = "wps";
+			gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_WPS_BUTTON>;
+		};
+	};
+
+	vcc_sys: regulator-vcc-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+
+	vcc_3v3: regulator-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc_sys>;
+	};
+
+	vcc_1v8: regulator-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc_sys>;
+	};
+
+	vdd_0v9: regulator-0v9 {
+		compatible = "regulator-fixed";
+		regulator-name = "vdd_0v9";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		vin-supply = <&vcc_sys>;
+	};
+
+	vcc_ddr: regulator-vcc-ddr {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_ddr";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1100000>;
+		regulator-max-microvolt = <1100000>;
+		vin-supply = <&vcc_sys>;
+	};
+
+	vdd_arm: regulator-vdd-arm {
+		compatible = "pwm-regulator";
+		pwms = <&pwm1 0 5000 PWM_POLARITY_INVERTED>;
+		pwm-supply = <&vcc_sys>;
+		regulator-name = "vdd_arm";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <746000>;
+		regulator-max-microvolt = <1201000>;
+		regulator-init-microvolt = <953000>;
+		regulator-settling-time-up-us = <250>;
+	};
+
+	vdd_logic: regulator-vdd-logic {
+		compatible = "pwm-regulator";
+		pwms = <&pwm2 0 5000 PWM_POLARITY_INVERTED>;
+		pwm-supply = <&vcc_sys>;
+		regulator-name = "vdd_logic";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <703000>;
+		regulator-max-microvolt = <1006000>;
+		regulator-init-microvolt = <900000>;
+		regulator-settling-time-up-us = <250>;
+	};
+
+	vcc5v0_host: regulator-vcc5v0-host {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_host";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio4 RK_PB4 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_host_en>;
+		vin-supply = <&vcc_sys>;
+	};
+};
+
+&combphy {
+	status = "okay";
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu1 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu2 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu3 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&gmac0 {
+	status = "disabled";
+};
+
+&gmac1 {
+	/delete-property/ power-domains;
+	phy-mode = "rgmii-rxid";
+	clock_in_out = "output";
+
+	assigned-clocks = <&cru CLK_GMAC1_SRC_VPU>, <&cru CLK_GMAC1_RMII_VPU>;
+	assigned-clock-rates = <125000000>, <50000000>;
+
+	snps,reset-gpio = <&gpio4 RK_PB5 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+
+	tx_delay = <0x30>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&rgmii_miim>, <&rgmii_tx_bus2>, <&rgmii_rx_bus2>,
+		    <&rgmii_rgmii_clk>, <&rgmii_rgmii_bus>;
+	status = "okay";
+
+	/* DSA master: the RGMII link to the switch CPU port is fixed */
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+	};
+};
+
+&mdio1 {
+	/* RTL8376RB switch (RTL8365MB-family DSA driver) on MDIO addr 29 */
+	switch@1d {
+		compatible = "realtek,rtl8365mb";
+		reg = <29>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				label = "lan1";
+				phy-handle = <&sw_phy0>;
+			};
+			port@1 {
+				reg = <1>;
+				label = "lan2";
+				phy-handle = <&sw_phy1>;
+			};
+			port@2 {
+				reg = <2>;
+				label = "lan3";
+				phy-handle = <&sw_phy2>;
+			};
+			port@3 {
+				reg = <3>;
+				label = "wan";
+				phy-handle = <&sw_phy3>;
+			};
+			port@7 {
+				reg = <7>;
+				ethernet = <&gmac1>;
+				phy-mode = "rgmii";
+				rx-internal-delay-ps = <2000>;
+				tx-internal-delay-ps = <2000>;
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+				};
+			};
+		};
+
+		mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			sw_phy0: ethernet-phy@0 {
+				reg = <0>;
+			};
+			sw_phy1: ethernet-phy@1 {
+				reg = <1>;
+			};
+			sw_phy2: ethernet-phy@2 {
+				reg = <2>;
+			};
+			sw_phy3: ethernet-phy@3 {
+				reg = <3>;
+			};
+		};
+	};
+};
+
+&pcie {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pciem1_pins>;
+	reset-gpios = <&gpio1 RK_PA2 GPIO_ACTIVE_HIGH>;
+	vpcie3v3-supply = <&vcc_3v3>;
+	status = "okay";
+};
+
+&pinctrl {
+	leds {
+		led_pins: led-pins {
+			rockchip,pins = <4 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>,
+					<4 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>,
+					<4 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>,
+					<4 RK_PA3 RK_FUNC_GPIO &pcfg_pull_none>,
+					<4 RK_PA4 RK_FUNC_GPIO &pcfg_pull_none>,
+					<4 RK_PA5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	keys {
+		wps_key_pin: wps-key-pin {
+			rockchip,pins = <4 RK_PB6 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	usb {
+		vcc5v0_host_en: vcc5v0-host-en {
+			rockchip,pins = <4 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+&pwm1 {
+	status = "okay";
+};
+
+&pwm2 {
+	status = "okay";
+};
+
+&saradc {
+	status = "okay";
+	vref-supply = <&vcc_1v8>;
+};
+
+&sdhci {
+	bus-width = <8>;
+	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
+	max-frequency = <200000000>;
+	no-sd;
+	no-sdio;
+	non-removable;
+	status = "okay";
+};
+
+&sdio0 {
+	status = "disabled";
+};
+
+&sdmmc {
+	status = "disabled";
+};
+
+&uart0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0m0_xfer>;
+};
+
+&uart2 {
+	status = "disabled";
+};
+
+&usb2phy {
+	status = "okay";
+};
+
+&usb2phy_host {
+	status = "okay";
+};
+
+&usb2phy_otg {
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+&usb_host0_xhci {
+	maximum-speed = "high-speed";
+	phys = <&usb2phy_otg>;
+	phy-names = "usb2-phy";
+	status = "okay";
+};

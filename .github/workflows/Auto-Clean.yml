@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT
+# Daily housekeeping.
+#
+# NOTE on releases_keep_latest: every CONFIG produces its OWN release (one tag
+# per config per run), so this number is GLOBAL across all configs — it must be
+# at least the number of configs (7) to avoid deleting other devices' releases.
+# Keep ~2 rounds of headroom.
+
+name: Auto-Clean
+
+on:
+  schedule:
+    - cron: 0 22 * * *
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  auto_clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old Releases and Workflows
+        uses: ophub/delete-releases-workflows@main
+        with:
+          gh_token: ${{secrets.GITHUB_TOKEN}}
+          delete_releases: true
+          releases_keep_latest: 14
+          delete_tags: true
+          delete_workflows: true
+          workflows_keep_day: 3

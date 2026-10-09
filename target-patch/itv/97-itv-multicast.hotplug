@@ -1,0 +1,43 @@
+#!/bin/sh
+# ITV (IPTV) multicast — hotplug fallback.
+#
+# The itv interface may be created / renamed / re-upped AFTER first boot
+# (VLAN, PPPoE, DHCP, static). Whenever that happens this script re-asserts:
+#   - the itv firewall zone (zone is a container, built even if the iface is down)
+#   - the multicast route 224.0.0.0/4 (and 239.0.0.0/8) pointing at the real DEV
+#   - force_igmp_version=2 on that DEV
+#
+# ACTION is widened to ifup|ifupdate|update to also cover "interface created
+# then brought up" and "interface edited" (netifd emits `update` for both).
+
+case "$ACTION" in
+	ifup|ifupdate|update) ;;
+	*) exit 0 ;;
+esac
+[ "$INTERFACE" = "itv" ] || exit 0
+
+# --- 1) zone first (unconditional, idempotent) ---
+if ! uci -q get firewall.itv >/dev/null; then
+	uci set firewall.itv='zone'
+	uci set firewall.itv.name='itv'
+	uci set firewall.itv.network='itv'
+	uci set firewall.itv.input='ACCEPT'
+	uci set firewall.itv.output='ACCEPT'
+	uci set firewall.itv.forward='DROP'
+	uci set firewall.itv.masq='0'
+	uci set firewall.itv.mtu_fix='0'
+	uci commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
+fi
+
+# --- 2) resolve the real device: runtime l3_device first, then uci device ---
+DEV=$(ubus call network.interface.itv status 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
+[ -z "$DEV" ] && DEV=$(uci -q get network.itv.device 2>/dev/null)
+[ -z "$DEV" ] && exit 0   # zone already handled above
+
+# --- 3) multicast route + IGMPv2 on the concrete device ---
+ip route replace 224.0.0.0/4 dev "$DEV" 2>/dev/null
+ip route replace 239.0.0.0/8 dev "$DEV" 2>/dev/null
+echo 2 > /proc/sys/net/ipv4/conf/"$DEV"/force_igmp_version 2>/dev/null
+
+exit 0

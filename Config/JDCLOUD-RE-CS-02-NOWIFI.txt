@@ -1,0 +1,17 @@
+# 雅典娜 JDCloud AX6600 (RE-CS-02, IPQ6010) — NO WiFi
+# Source : immortalwrt/immortalwrt @ master (official, device already present)
+# Image  : immortalwrt-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade.bin
+#
+# Scripts/Settings.sh disables kmod-ath11k/mac80211/wpad for *-NOWIFI*.
+# The athena-led dot-matrix panel is still enabled (it is a GPIO display,
+# completely independent of the wireless stack).
+
+#--- target ---
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=y
+
+#--- LED dot-matrix panel ---
+CONFIG_PACKAGE_athena-led=y
+CONFIG_PACKAGE_luci-app-athena-led=y
+CONFIG_PACKAGE_luci-i18n-athena-led-zh-cn=y

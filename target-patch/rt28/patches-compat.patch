@@ -1,0 +1,30 @@
+diff --git A/pa/package/kernel/mt76/Makefile B/pb/package/kernel/mt76/Makefile
+index 2070137..e9c1f35 100644
+--- a/package/kernel/mt76/Makefile
++++ b/package/kernel/mt76/Makefile
+@@ -624,6 +624,7 @@ define KernelPackage/mt7916-firmware/install
+ 		$(PKG_BUILD_DIR)/firmware/mt7916_wa.bin \
+ 		$(PKG_BUILD_DIR)/firmware/mt7916_wm.bin \
+ 		$(PKG_BUILD_DIR)/firmware/mt7916_rom_patch.bin \
++		$(PKG_BUILD_DIR)/firmware/mt7916_eeprom.bin \
+ 		$(1)/lib/firmware/mediatek
+ endef
+ 
+diff --git A/pa/target/linux/generic/files/drivers/net/phy/rtl8367b.c B/pb/target/linux/generic/files/drivers/net/phy/rtl8367b.c
+index 526bfcd..6a91623 100644
+--- a/target/linux/generic/files/drivers/net/phy/rtl8367b.c
++++ b/target/linux/generic/files/drivers/net/phy/rtl8367b.c
+@@ -1527,6 +1527,13 @@ static int rtl8367b_detect(struct rtl8366_smi *smi)
+ 	}
+ 
+ 	switch (chip_ver) {
++	case 0x0030:
++		/* RTL8367B original (non -VB): CHIP_NUMBER 0x6642 */
++		if (chip_num == 0x6642) {
++			chip_name = "8367B";
++			smi->rtl8367b_chip = RTL8367B_CHIP_RTL8367RB;
++		}
++		break;
+ 	case 0x0010:
+ 		if (chip_num == 0x6642) {
+ 			chip_name = "8367S-VB";

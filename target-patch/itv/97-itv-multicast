@@ -1,0 +1,41 @@
+#!/bin/sh
+# ITV (IPTV) multicast — first-boot guarantee.
+#
+# Why this exists IN ADDITION to the itv zone in /etc/config/firewall:
+#   * The zone is shipped in the firewall config already (see firewall.append),
+#     but a user restoring a backup / upgrading may end up without it -> this
+#     script re-creates it idempotently.
+#   * The multicast ROUTE and IGMP version are only meaningful once the itv
+#     interface exists, which may happen after first boot (hotplug covers that).
+#
+# Three elements (all required, verified on real hardware):
+#   1) multicast route 224.0.0.0/4 -> itv device.
+#      Without it the kernel picks the default route (uplink) and the IGMP join
+#      leaves on the WRONG port -> the operator never sends the stream.
+#   2) dedicated itv firewall zone (masq=0). See firewall.append for rationale.
+#   3) force_igmp_version=2 — most operator IPTV uses IGMPv2 only.
+
+# --- 2) zone (idempotent, unconditional — a zone is a rule container and does
+#        NOT depend on the interface existing or being up) ---
+if ! uci -q get firewall.itv >/dev/null; then
+	uci set firewall.itv='zone'
+	uci set firewall.itv.name='itv'
+	uci set firewall.itv.network='itv'
+	uci set firewall.itv.input='ACCEPT'
+	uci set firewall.itv.output='ACCEPT'
+	uci set firewall.itv.forward='DROP'
+	uci set firewall.itv.masq='0'
+	uci set firewall.itv.mtu_fix='0'
+	uci commit firewall
+fi
+
+# --- 3) IGMP v2 persisted in sysctl.conf (applies to all/default now,
+#        the concrete device is set by the hotplug script) ---
+echo 2 > /proc/sys/net/ipv4/conf/all/force_igmp_version 2>/dev/null
+echo 2 > /proc/sys/net/ipv4/conf/default/force_igmp_version 2>/dev/null
+grep -q 'force_igmp_version' /etc/sysctl.conf 2>/dev/null || cat >> /etc/sysctl.conf <<'SYSCTL'
+net.ipv4.conf.all.force_igmp_version=2
+net.ipv4.conf.default.force_igmp_version=2
+SYSCTL
+
+exit 0

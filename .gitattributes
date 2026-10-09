@@ -1,0 +1,10 @@
+* text=auto
+*.txt text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.dts text eol=lf
+*.dtsi text eol=lf
+*.mk text eol=lf
+*.init text eol=lf
+*.bootscript text eol=lf
+*.patch text eol=lf

@@ -1,0 +1,17 @@
+# 雅典娜 JDCloud AX6600 (RE-CS-02, IPQ6010) — WITH WiFi
+# Source : immortalwrt/immortalwrt @ master (official, device already present)
+# Image  : immortalwrt-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade.bin
+#
+# Wireless: QCN5022 (2.4G) + QCN5052 + QCN9024 (5G), driven by ath11k.
+# The 2.5G WAN port is QCA8081; the LED dot-matrix panel is handled by
+# athena-led (pinned to v2.4.0, pulled by Scripts/Packages.sh).
+
+#--- target ---
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=y
+
+#--- LED dot-matrix panel ---
+CONFIG_PACKAGE_athena-led=y
+CONFIG_PACKAGE_luci-app-athena-led=y
+CONFIG_PACKAGE_luci-i18n-athena-led-zh-cn=y

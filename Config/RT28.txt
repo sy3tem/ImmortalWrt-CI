@@ -1,0 +1,40 @@
+# Hugsun RT28 (RK3528 + RTL8367B switch + MT7916 WiFi)
+# Source : immortalwrt/immortalwrt @ master (official) + target-patch/rt28 injection
+# Image  : immortalwrt-rockchip-armv8-hugsun_rt28-squashfs-sysupgrade.img.gz
+#
+# Scripts/Inject-RT28.sh adds: DTS, Device/hugsun_rt28, Build/rockchip-dtb,
+# bootscript, board.d network/leds, per-board base-files, the prebuilt factory
+# U-Boot and two compatibility kernel patches.
+
+#--- target ---
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_hugsun_rt28=y
+
+#--- partition layout ---
+# the bare arm64 Image (~19MB) + boot.scr + rockchip.dtb must fit in the kernel
+# partition (the 16MB default is too small), and docker needs room in rootfs.
+CONFIG_TARGET_KERNEL_PARTSIZE=24
+CONFIG_TARGET_ROOTFS_PARTSIZE=512
+
+#--- switch + WiFi ---
+# RTL8367B is driven by the DSA rtl8365mb driver (patched, see 998-*.patch)
+CONFIG_PACKAGE_kmod-dsa-rtl8365mb=y
+CONFIG_PACKAGE_kmod-mt7915e=y
+CONFIG_PACKAGE_kmod-mt7916-firmware=y
+CONFIG_PACKAGE_wpad-openssl=y
+
+#--- prebuilt factory U-Boot ---
+CONFIG_PACKAGE_u-boot-hugsun-rt28-rk3528=y
+
+#--- docker ---
+CONFIG_PACKAGE_docker=y
+CONFIG_PACKAGE_dockerd=y
+
+#--- extras ---
+CONFIG_PACKAGE_miniupnpd=y
+CONFIG_PACKAGE_luci-app-upnp=y
+CONFIG_PACKAGE_ddns-scripts=y
+CONFIG_PACKAGE_luci-app-ddns=y
+CONFIG_PACKAGE_ethtool=y
+CONFIG_PACKAGE_luci-app-wol=y

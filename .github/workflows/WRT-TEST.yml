@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: MIT
+# On-demand single-config TEST build (only writes .config, ~5 min).
+# Useful to validate a Config/*.txt change without a full compile.
+
+name: WRT-TEST
+
+on:
+  workflow_dispatch:
+    inputs:
+      CONFIG:
+        default: 'R28S-WIFI'
+        required: true
+        type: choice
+        options:
+          - R28S-WIFI
+          - R28S-NOWIFI
+          - RT28
+          - JDCLOUD-RE-SS-01-WIFI
+          - JDCLOUD-RE-SS-01-NOWIFI
+          - JDCLOUD-RE-CS-02-WIFI
+          - JDCLOUD-RE-CS-02-NOWIFI
+      SOURCE:
+        default: 'immortalwrt/immortalwrt'
+        required: true
+        type: choice
+        options:
+          - immortalwrt/immortalwrt
+      BRANCH:
+        default: 'master'
+        required: true
+        type: string
+      PACKAGE:
+        required: false
+        type: string
+      TEST:
+        description: '仅输出配置文件，不编译固件。'
+        default: 'true'
+        required: true
+        type: boolean
+
+permissions: write-all
+
+jobs:
+  config:
+    name: ${{inputs.CONFIG}}
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_CONFIG: ${{inputs.CONFIG}}
+      WRT_THEME: argon
+      WRT_NAME: DWRT
+      WRT_SSID: DWRT
+      WRT_WORD: 12345678
+      WRT_IP: 192.168.10.1
+      WRT_PW: password
+      WRT_REPO: https://github.com/${{inputs.SOURCE}}.git
+      WRT_BRANCH: ${{inputs.BRANCH}}
+      WRT_SOURCE: ${{inputs.SOURCE}}
+      WRT_PACKAGE: ${{inputs.PACKAGE}}
+      WRT_TEST: ${{inputs.TEST}}
