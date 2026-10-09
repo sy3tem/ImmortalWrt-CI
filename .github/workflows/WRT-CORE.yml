@@ -222,6 +222,16 @@ jobs:
             make clean -j$(nproc)
           fi
 
+      - name: Upload Test Config
+        # TEST runs never touch the Releases page; hand the generated .config
+        # back as a workflow artifact so it can still be inspected/verified.
+        if: env.WRT_TEST == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Config-${{env.WRT_CONFIG}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
+          path: ./wrt/upload/*.txt
+          retention-days: 7
+
       - name: Release Firmware
         # TEST runs only emit a .config, never a release
         if: env.WRT_TEST != 'true'
