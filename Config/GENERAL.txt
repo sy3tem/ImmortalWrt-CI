@@ -1,7 +1,8 @@
-# ImmortalWrt unified build — GLOBAL config (appended to every per-device config).
-#   .config = Config/<DEVICE>.txt + Config/GENERAL.txt
-# Keep this file platform-agnostic: everything platform-specific belongs in the
-# per-device config or in Scripts/Settings.sh.
+# ImmortalWrt unified build — GLOBAL defaults (read BEFORE the per-device config).
+#   .config = Config/GENERAL.txt + Config/<DEVICE>.txt
+# Because kconfig lets the LAST assignment win, a device config can override
+# anything set here. Keep this file platform-agnostic: everything
+# platform-specific belongs in the per-device config or in Scripts/Settings.sh.
 
 #--- build options ---
 CONFIG_CCACHE=y
@@ -126,6 +127,7 @@ CONFIG_PACKAGE_luci-app-store=y
 #   · DNS 缓存  -> dnsmasq 原生
 # 保留一行指向不存在的包会被 defconfig 静默丢弃, 属"配置残留", 故移除。
 CONFIG_PACKAGE_luci-app-attendedsysupgrade=n
+# WOL 默认关闭（RT28 在 Config/RT28.txt 里覆盖为 =y，后写的赢）
 CONFIG_PACKAGE_luci-app-wol=n
 
 #--- common CLI tools ---
