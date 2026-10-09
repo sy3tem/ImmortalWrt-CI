@@ -115,9 +115,16 @@ CONFIG_PACKAGE_luci-proto-relay=y
 CONFIG_PACKAGE_luci-app-autoreboot=y
 CONFIG_PACKAGE_luci-app-upnp=y
 CONFIG_PACKAGE_luci-app-ttyd=y
-CONFIG_PACKAGE_luci-app-turboacc=y
 CONFIG_PACKAGE_luci-app-dockerman=y
+# iStore 应用商店: 官方 feeds 没有, 由 Scripts/Packages.sh 从 linkease/istore
+# 现场克隆 (luci-app-store + luci-lib-taskd + luci-lib-xterm + taskd 四件套)。
 CONFIG_PACKAGE_luci-app-store=y
+# 注: 原 VIKINGYFY 时代配置里的 luci-app-turboacc 已删除 —— 官方 feeds
+# (immortalwrt/luci) 自 2025 起不再提供该包, 且它在本项目已无实际作用:
+#   · 流量分载  -> firewall4 原生 (CONFIG_PACKAGE_kmod-nft-offload 已开)
+#   · BBR       -> 内核自带, 由 sysctl 开启
+#   · DNS 缓存  -> dnsmasq 原生
+# 保留一行指向不存在的包会被 defconfig 静默丢弃, 属"配置残留", 故移除。
 CONFIG_PACKAGE_luci-app-attendedsysupgrade=n
 CONFIG_PACKAGE_luci-app-wol=n
 

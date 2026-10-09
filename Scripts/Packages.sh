@@ -5,7 +5,9 @@
 # Almost everything lives in the OFFICIAL immortalwrt/packages + immortalwrt/luci
 # feeds already, so no vendoring is needed. This script only:
 #   - patches the few packages that need a nudge to build cleanly
-#   - pulls the two genuinely external packages (Luke's athena-led for RE-CS-02)
+#   - pulls the two genuinely external packages:
+#       · iStore   (luci-app-store + its 3 deps)  -> linkease/istore
+#       · athena-led (RE-CS-02 点阵屏)             -> unraveloop/JDC-AX6600-Athena-LED-Controller
 #
 # CONVENTION: this script runs with CWD = <tree>/package  (like the upstream CI),
 # so "./" is the package directory and "$GITHUB_WORKSPACE/wrt" is the tree root.
@@ -57,6 +59,23 @@ for D in rtp2httpd luci-app-rtp2httpd; do
 		[ -f "$BASE/$D/Makefile.versioned" ] && mv -f "$BASE/$D/Makefile.versioned" "$BASE/$D/Makefile" && echo "$D Makefile.versioned applied!"
 	done
 done
+
+# ---- iStore 应用商店 — external (linkease/istore), always -------------------
+# 官方 feeds 都没有这 4 个包, 必须从 linkease/istore 现场提取, 否则依赖不满足
+# 会被 defconfig 静默丢弃 (CONFIG_PACKAGE_luci-app-store 变成"配置残留")。
+# 依赖链: luci-app-store -> luci-lib-taskd -> luci-lib-xterm + taskd(二进制后端)
+# 其余 curl/tar/mount-utils/script-utils(=util-linux) 官方源都有。
+if [ ! -d "$PKG_PATH/luci-app-store" ]; then
+	echo " "
+	git clone -q --depth=1 --single-branch --branch "main" \
+		"https://github.com/linkease/istore.git" "$TREE_ROOT/istore-tmp"
+	cp -rf "$TREE_ROOT/istore-tmp/luci/luci-app-store" "$PKG_PATH/"
+	cp -rf "$TREE_ROOT/istore-tmp/luci/luci-lib-taskd" "$PKG_PATH/"
+	cp -rf "$TREE_ROOT/istore-tmp/luci/luci-lib-xterm" "$PKG_PATH/"
+	cp -rf "$TREE_ROOT/istore-tmp/luci/taskd" "$PKG_PATH/"
+	rm -rf "$TREE_ROOT/istore-tmp"
+	echo "iStore (luci-app-store + luci-lib-taskd + luci-lib-xterm + taskd) extracted!"
+fi
 
 # ---- athena-led (雅典娜 RE-CS-02 点阵屏) — external, pinned to v2.4.0 -------
 # Two packages: athena-led (core) + luci-app-athena-led (LuCI).
