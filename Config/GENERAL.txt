@@ -66,7 +66,7 @@ CONFIG_PACKAGE_kmod-usb-storage=y
 CONFIG_PACKAGE_kmod-usb-storage-extras=y
 CONFIG_PACKAGE_kmod-usb-storage-uas=y
 CONFIG_PACKAGE_kmod-usb-uhci=y
-CONFIG_PACKAGE_kmod-usb-xhci=y
+CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
 
 #--- system tools ---
 CONFIG_PACKAGE_autocore=y
@@ -166,23 +166,26 @@ CONFIG_PACKAGE_iptables-mod-conntrack-extra=y
 CONFIG_PACKAGE_iptables-mod-ipopt=y
 
 #--- proxy: passwall + xray-core (only xray enabled) ---
+# luci-app-passwall comes from the OFFICIAL immortalwrt/luci feed (self-contained:
+# UI + core scripts, deps all in immortalwrt/packages). Its INCLUDE_* option
+# names below are copied verbatim from the official Makefile's PKG_CONFIG_DEPENDS
+# — a wrong name would simply be dropped by defconfig (= "配置残留").
 CONFIG_PACKAGE_luci-app-passwall=y
 CONFIG_PACKAGE_xray-core=y
 CONFIG_PACKAGE_ipt2socks=y
 CONFIG_PACKAGE_firewall4=y
 CONFIG_PACKAGE_ucode-mod-digest=y
 CONFIG_PACKAGE_ucode-mod-math=y
-CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
-CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Geoview=n
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Hysteria=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_NaiveProxy=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadow_TLS=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Server=n
-CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client=n
-CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Server=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Simple_Obfs=n
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Geodata=n
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Geoview=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=n
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray_Plugin=n

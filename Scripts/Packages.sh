@@ -37,13 +37,14 @@ if [ -n "$HP_PATH" ]; then
 	echo "homeproxy rule data updated!"
 fi
 
-# ---- passwall: drop the lyaml dependency (not in the official feeds) --------
-PW_FILE="$PKG_PATH/luci-app-passwall/Makefile"
-if [ -f "$PW_FILE" ]; then
-	echo " "
-	sed -i 's/ +lyaml//g' "$PW_FILE"
-	echo "passwall lyaml dependency removed!"
-fi
+# ---- NOTE: passwall lyaml dependency is NOT stripped -------------------------
+# 旧 CI 里有一段 `sed -i 's/ +lyaml//g' luci-app-passwall/Makefile`, 理由是
+# "官方 feeds 无 lyaml"。该理由已过时: 官方 immortalwrt/packages 现在自带
+# `lang/lua/lyaml` (其 host 依赖 lua/host + luarocks/host 也都在官方源),
+# downloads.immortalwrt.org 上也确实有 lyaml-*.apk。
+# 因此保留 passwall 的原始依赖 —— 去掉它反而会丢掉 passwall 导入 Clash/YAML
+# 订阅的能力。而且旧写法路径也不对 (feeds 装出来的包在 package/feeds/luci/ 下,
+# 不是 package/luci-app-passwall/), 属于既不生效又误导的死代码。
 
 # ---- rust: disable ci-llvm (avoids the llvm-bpf host toolchain) -------------
 RUST_FILE=$(find "$TREE_ROOT/feeds/packages/" -maxdepth 3 -type f -wholename "*/rust/Makefile" 2>/dev/null | head -1)
