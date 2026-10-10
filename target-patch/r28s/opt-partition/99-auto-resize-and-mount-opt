@@ -125,18 +125,29 @@ case "${DISKSZ:-x}${START:-x}" in
 	if [ -n "$CURSZ" ] && [ "$WANT" -gt "$CURSZ" ]; then
 		logger -t $0 "growing $PART: $CURSZ -> $WANT sectors"
 		if command -v sfdisk >/dev/null; then
+			# NB: --no-reread only skips the "is anyone using this disk?"
+			# *check*; sfdisk still calls fdisk_reread_partition_table()
+			# (BLKRRPART) afterwards unless --no-tell-kernel is given.  That
+			# call fails harmlessly here: BLKRRPART -> disk_scan_partitions()
+			# returns -EBUSY before touching anything because the rootfs
+			# partition is open (disk->open_partitions > 0).  sfdisk ignores
+			# the result, so the table on disk is what counts.
 			echo "start=${START}, size=${WANT}, type=83" | \
 				sfdisk -N "$PARTNUM" --force --no-reread "$DISK" >/dev/null 2>&1
-			# OpenWrt's MBR disk signature (written by gen_image_generic.sh) --
-			# it is what makes root=PARTUUID=5452574f-02 resolvable, never let
-			# it change.
+			# sfdisk writes back the 512-byte sector it read (only the entries
+			# it changed are touched -- verified in libfdisk dos.c:
+			# dos_write_disklabel() -> write_sector(0, cxt->firstsector)), so
+			# the disk signature survives.  It is what makes
+			# root=PARTUUID=5452574f-02 resolvable, so restore it anyway.
 			printf 'OWRT' | dd of="$DISK" bs=1 seek=440 conv=notrunc 2>/dev/null
 			sync
 		fi
-		# let the kernel pick up THIS partition only (BLKPG).  No BLKRRPART:
-		# the rootfs is mounted, so a full rescan would fail with EBUSY and
-		# that is exactly what used to force a reboot.  If it does not work the
-		# next boot re-reads the table from disk and tries again -- never a loop.
+		# Now tell the kernel about THIS partition only, via BLKPG: partx -u
+		# does BLKPG_DEL_PARTITION (or BLKPG_RESIZE_PARTITION if the delete
+		# returns EBUSY) + BLKPG_ADD_PARTITION with the new geometry read
+		# back from the disk.  No BLKRRPART, no EBUSY, no reboot -- that is
+		# the whole point.  If it ever fails the next boot re-reads the table
+		# from disk and simply tries again, so there is never a loop.
 		partx -u -n "$PARTNUM" "$DISK" >/dev/null 2>&1
 		sync
 	fi
