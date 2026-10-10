@@ -31,6 +31,19 @@ CONFIG_PACKAGE_kmod-dsa=y
 CONFIG_PACKAGE_kmod-dummy=y
 CONFIG_PACKAGE_kmod-fs-btrfs=y
 CONFIG_PACKAGE_kmod-fs-ext4=y
+# ⚠ 必开: eMMC / 大分区机型的 overlay 会被 fstools **自动选成 f2fs**。
+#   fstools/libfstools/common.c 的 use_f2fs():
+#       ret = (BLKGETSIZE64(bdev) - overlay_offset) > F2FS_MINSIZE;  /* 100 MiB */
+#   overlay_offset = align_up(squashfs bytes_used, 64KiB)（rootdisk.c），也就是 rootfs
+#   分区里 squashfs 之后的空闲空间。>100MiB 就 `mkfs.f2fs`，否则 `mkfs.ext4`。
+#   我们所有板子的 rootfs 分区都远大于固件本身（亚瑟 2G 大分区 GPT / RT28 512M /
+#   R28S 1024M）→ 必然命中 f2fs 分支。此时若镜像里没有 mkfs.f2fs 或 f2fs.ko，
+#   overlay 建不出来，系统静默退回 ramoverlay（纯内存根），现象就是
+#   「能改配置、重启全丢」——亚瑟刷机后配置不保存的真因。
+#   上游同 target 的 eMMC 设备即如此处理:
+#     ipq60xx.mk: Device/link_nn6000-v1  DEVICE_PACKAGES := ... kmod-fs-f2fs f2fs-tools
+#   （f2fs-tools 提供 mkfs.f2fs/fsck.f2fs，见下方 system tools 段。）
+CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_kmod-fuse=y
 CONFIG_PACKAGE_kmod-inet-diag=y
 CONFIG_PACKAGE_kmod-inet-mptcp-diag=y
@@ -95,6 +108,9 @@ CONFIG_PACKAGE_cpufreq=y
 CONFIG_PACKAGE_curl=y
 CONFIG_PACKAGE_dmesg=y
 CONFIG_PACKAGE_e2fsprogs=y
+# mkfs.f2fs / fsck.f2fs —— fstools 给 eMMC 大分区建 overlay 时要用（见上方 kmod-fs-f2fs）。
+# fstools 的 block preen 也会调 `fsck.f2fs -p`，所以这里不能省。
+CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_fdisk=y
 CONFIG_PACKAGE_gdisk=y
 CONFIG_PACKAGE_htop=y
