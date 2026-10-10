@@ -128,8 +128,13 @@ CONFIG_PACKAGE_openssl-util=y
 CONFIG_PACKAGE_parted=y
 CONFIG_PACKAGE_partx-utils=y
 CONFIG_PACKAGE_proto-bonding=y
+# /opt 大分区首启脚本（99-auto-resize-and-mount-opt，照官方 friendlywrt 机制）
+# 要 resize2fs + tune2fs；mkfs.ext4 与 e2fsck 由上面的 e2fsprogs 提供。
+# 官方 friendlywrt 的 rockchip config 里这两项同样是显式 =y。
+CONFIG_PACKAGE_resize2fs=y
 CONFIG_PACKAGE_sfdisk=y
 CONFIG_PACKAGE_sgdisk=y
+CONFIG_PACKAGE_tune2fs=y
 CONFIG_PACKAGE_usb-modeswitch=y
 CONFIG_PACKAGE_usbmuxd=y
 CONFIG_PACKAGE_usbutils=y

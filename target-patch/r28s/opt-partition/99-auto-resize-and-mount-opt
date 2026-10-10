@@ -1,0 +1,175 @@
+#!/bin/bash
+# /etc/uci-defaults/99-auto-resize-and-mount-opt
+#
+# Give the NanoPi R28S a large /opt partition on the eMMC.
+#
+# This is the vendor's own mechanism, taken from
+#   friendlyarm/friendlywrt_scripts@master : build.sh  (lines 337-383)
+# which writes exactly this script into /etc/uci-defaults for boards built with
+# ENABLE_OPT_PARTITION=true (see friendlywrt_device_rk3528 rk3528/base.mk).
+# Steps 3..5 below are the vendor's, line by line; step 2 is the single addition
+# and it is explained there.
+#
+# Vendor flow (for reference):
+#   * the opt partition ALREADY EXISTS when the board is flashed -- sd-fuse_rk3528
+#     builds the table from parameter.txt ("opt:grow") -- and opt.img, built by
+#     tools/make-img.sh, already carries a formatted ext4 filesystem;
+#   * so the first boot only has to resize the partition entry, run resize2fs and
+#     write the fstab entry.  There is NO reboot anywhere: parted's BLKPG ioctl
+#     updates one partition's geometry without re-reading the whole table
+#     (which a mounted rootfs would forbid, and which is why the old, self-made
+#     init.d service that created the partition at runtime needed a reboot).
+#
+# Our image ships the same layout (Build/r28s-opt-img appends an EMPTY p3), so
+# step 2 additionally creates the filesystem on the very first boot.
+#
+# Deliberate deviations from the vendor:
+#   1) partition lookup: the vendor uses a fixed UUID (blkid -U) because opt.img
+#      is generated at build time and keeps it; we use the label, because we
+#      create the filesystem ourselves.
+#   2) we mkfs.ext4 -L opt, but only when the partition carries no filesystem at
+#      all -- an existing /opt is never reformatted.
+#   3) resizing: the vendor calls `parted -s $DISK resizepart $PARTNUM 100%`;
+#      we use sfdisk -N + partx -u.  libparted's msdos_write() memsets the
+#      512-byte MBR boot area and regenerates the disk signature whenever
+#      boot_code[0] == 0, and our bootargs are root=PARTUUID=5452574f-02 -- they
+#      depend on that signature, so a regenerated id would make the board
+#      unbootable.  sfdisk/partx only rewrite the one entry and we restore the
+#      "OWRT" magic explicitly.
+#
+# This script NEVER reboots and always exits 0 on failure: a missing /opt is a
+# cosmetic problem, an unbootable board is not.  Every step is idempotent, so a
+# partial success simply retries on the next boot.
+
+. /lib/functions/uci-defaults.sh
+
+if ! command -v blkid >/dev/null || ! command -v resize2fs >/dev/null; then
+	logger -t $0 "Error: 'blkid' and/or 'resize2fs' commands are required but not found. Exiting."
+	exit 1
+fi
+
+# ---- 1) locate the /opt partition ----------------------------------------------
+PART=$(blkid -L opt 2>/dev/null)
+[ -n "$PART" ] && [ ! -b "$PART" ] && PART=""
+if [ -z "$PART" ]; then
+	# our image ships the partition as an empty p3 (official layout); derive the
+	# disk we booted from instead of hard-coding /dev/mmcblk0
+	ROMPART=$(awk '$2 == "/rom" { print $1; exit }' /proc/mounts 2>/dev/null)
+	ROMPART=$(readlink -f "$ROMPART" 2>/dev/null)
+	case "$ROMPART" in
+	/dev/mmcblk*p*) DISK="${ROMPART%p*}" ;;
+	*)
+		DISK=""
+		for d in /dev/mmcblk0 /dev/mmcblk1 /dev/mmcblk2; do
+			[ -b "${d}p2" ] && { DISK="$d"; break; }
+		done
+		;;
+	esac
+	[ -b "$DISK" ] || { logger -t $0 "no system disk found, skip /opt"; exit 0; }
+	PART="${DISK}p3"
+fi
+[ -b "$PART" ] || {
+	logger -t $0 "no /opt partition (looked for $PART) -- dd the whole image, skip"
+	exit 0
+}
+
+DISK=${PART%p*}
+PARTNUM=${PART#${DISK}p}
+DISKNAME=${DISK##*/}
+case "$PARTNUM" in
+''|*[!0-9]*)
+	logger -t $0 "unexpected partition name ($PART), skip"
+	exit 0
+	;;
+esac
+
+PARTDIR="/sys/class/block/${DISKNAME}p${PARTNUM}"
+SYSDIR="/sys/class/block/${DISKNAME}"
+
+# ---- 1b) vendor guard: leftover hybrid MBR / GPT -------------------------------
+# Copied from the vendor script.  If a GPT header survives from an earlier image
+# the kernel may keep interpreting the disk as GPT, in which case this MBR
+# partition table (and therefore the opt partition) would be ignored.
+if command -v sfdisk >/dev/null; then
+	if sfdisk -l "$DISK" 2>&1 | grep -q "GPT PMBR size mismatch"; then
+		echo "write" | sfdisk "$DISK" -q --force 2>/dev/null
+	fi
+fi
+
+# ---- 2) make sure the partition carries an ext4 filesystem ---------------------
+FS=$(blkid -o value -s TYPE "$PART" 2>/dev/null)
+if [ -z "$FS" ]; then
+	logger -t $0 "creating ext4 filesystem on $PART (label=opt)"
+	mkfs.ext4 -F -L opt "$PART" >/dev/null 2>&1 || {
+		logger -t $0 "mkfs.ext4 on $PART failed, /opt stays unmounted"
+		exit 0
+	}
+	sync
+	FS=ext4
+fi
+[ "$FS" = "ext4" ] || {
+	logger -t $0 "unexpected filesystem '$FS' on $PART, refusing to touch it"
+	exit 0
+}
+
+# ---- 3) grow the partition to the end of the disk ------------------------------
+DISKSZ=$(cat "$SYSDIR/size" 2>/dev/null)
+START=$(cat "$PARTDIR/start" 2>/dev/null)
+CURSZ=$(cat "$PARTDIR/size" 2>/dev/null)
+case "${DISKSZ:-x}${START:-x}" in
+*[!0-9]*)
+	logger -t $0 "cannot read disk geometry from sysfs, skip growing $PART"
+	;;
+*)
+	WANT=$((DISKSZ - START))
+	if [ -n "$CURSZ" ] && [ "$WANT" -gt "$CURSZ" ]; then
+		logger -t $0 "growing $PART: $CURSZ -> $WANT sectors"
+		if command -v sfdisk >/dev/null; then
+			echo "start=${START}, size=${WANT}, type=83" | \
+				sfdisk -N "$PARTNUM" --force --no-reread "$DISK" >/dev/null 2>&1
+			# OpenWrt's MBR disk signature (written by gen_image_generic.sh) --
+			# it is what makes root=PARTUUID=5452574f-02 resolvable, never let
+			# it change.
+			printf 'OWRT' | dd of="$DISK" bs=1 seek=440 conv=notrunc 2>/dev/null
+			sync
+		fi
+		# let the kernel pick up THIS partition only (BLKPG).  No BLKRRPART:
+		# the rootfs is mounted, so a full rescan would fail with EBUSY and
+		# that is exactly what used to force a reboot.  If it does not work the
+		# next boot re-reads the table from disk and tries again -- never a loop.
+		partx -u -n "$PARTNUM" "$DISK" >/dev/null 2>&1
+		sync
+	fi
+	;;
+esac
+
+# ---- 4) resize the filesystem (vendor steps) -----------------------------------
+e2fsck -fy "$PART" >/dev/null 2>&1
+resize2fs -f "$PART" >/dev/null 2>&1 || logger -t $0 "resize2fs on $PART failed; retrying next boot"
+
+# refresh partition UUID (vendor step)
+if command -v tune2fs >/dev/null; then
+	tune2fs -U random "$PART" >/dev/null 2>&1
+fi
+UUID=$(blkid -o value -s UUID "$PART" 2>/dev/null)
+[ -n "$UUID" ] || { logger -t $0 "no UUID for $PART, skip fstab"; exit 0; }
+
+# ---- 5) fstab (vendor steps) ---------------------------------------------------
+while uci -q del fstab.@mount[-1]; do true; done
+
+uci add fstab mount
+uci set fstab.@mount[-1].target="/opt"
+uci set fstab.@mount[-1].uuid="${UUID}"
+uci set fstab.@mount[-1].enabled="1"
+uci commit fstab
+
+mkdir -p /opt
+if ! mount "$PART" /opt >/dev/null 2>&1; then
+	# most likely not mounted yet -- `mount /opt` resolves the fstab uuid later
+	# in the boot, via fstab.sh
+	logger -t $0 "$PART not mounted yet, the fstab entry will take over"
+fi
+
+NOWSZ=$(cat "$PARTDIR/size" 2>/dev/null)
+logger -t $0 "/opt ready on $PART (uuid=$UUID, $(( ${NOWSZ:-0} * 512 )) bytes)"
+exit 0
