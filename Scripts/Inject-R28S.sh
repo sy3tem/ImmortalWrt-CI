@@ -8,7 +8,9 @@
 #    (R28S reuses the in-tree NanoPi Zero2 U-Boot — same RK3528A SoC)
 # 4) board.d network / leds mapping
 # 5) clean auto-mount of the boot partition (match the vendor's tidy layout)
-# 6) /opt big-partition init.d service (use the leftover eMMC space)
+# 6) /opt big partition, the vendor's own way: the image already carries the
+#    partition (Build/r28s-opt-img) and a first-boot uci-defaults script
+#    formats + grows it (99-auto-resize-and-mount-opt).  No reboot anywhere.
 #
 # Called from WRT-CORE "Custom Settings" with CWD = source tree root.
 set -e
@@ -108,25 +110,46 @@ done
 uci commit fstab
 for m in /mnt/mmcblk0p1 /mnt/mmcblk0p3 /mnt/mmcblk2p1 /mnt/mmcblk2p3; do
 	umount "$m" 2>/dev/null
-	findmnt -n "$m" >/dev/null 2>&1 || rmdir "$m" 2>/dev/null
+	# busybox/OpenWrt has no findmnt (that is util-linux's mount-utils, which we
+	# do not install), so ask /proc/mounts directly before rmdir'ing.
+	awk -v m="$m" '$2 == m { found = 1 } END { exit !found }' /proc/mounts || rmdir "$m" 2>/dev/null
 done
 exit 0
 EOF
 chmod +x "$UDIR/99-r28s-clean-mount"
 echo "[5] uci-defaults clean-mount installed"
 
-# ---- 6) /opt big-partition init.d service ----
-OPT_INIT_SRC="$PATCH_DIR/opt-partition/r28s-opt-partition.init"
+# ---- 6) /opt big partition (vendor mechanism, no reboot) ----
+# (a) first-boot script: format p3 + grow it to the end of the eMMC + fstab.
+#     This is friendlywrt's own /etc/uci-defaults/99-auto-resize-and-mount-opt.
+OPT_DEF_SRC="$PATCH_DIR/opt-partition/99-auto-resize-and-mount-opt"
+mkdir -p "$UDIR"
+if [ -f "$OPT_DEF_SRC" ]; then
+	cp -f "$OPT_DEF_SRC" "$UDIR/99-auto-resize-and-mount-opt"
+	chmod +x "$UDIR/99-auto-resize-and-mount-opt"
+	echo "[6] /opt uci-defaults installed (vendor resize-and-mount)"
+else
+	echo "[6] 99-auto-resize-and-mount-opt not found, skip"
+fi
+
+# (b) host-side helper for Build/r28s-opt-img (adds the empty p3 to the image);
+#     the device definition in target-patch/r28s/armv8-device-r28s.mk calls it
+#     as $(TOPDIR)/scripts/r28s-mbr-add-part.py
+MBR_SRC="$PATCH_DIR/opt-partition/mbr_add_part.py"
+if [ -f "$MBR_SRC" ] && [ -d "./scripts" ]; then
+	cp -f "$MBR_SRC" "./scripts/r28s-mbr-add-part.py"
+	chmod +x "./scripts/r28s-mbr-add-part.py"
+	echo "[6b] mbr helper installed -> scripts/r28s-mbr-add-part.py"
+else
+	echo "[6b] mbr_add_part.py / scripts dir missing, skip"
+fi
+
+# (c) drop the old self-made service for good.  It appended a new, unformatted
+#     partition on *every* boot until the MBR ran out of the 4 primary slots,
+#     and then rebooted unconditionally -- a ~30 s reboot loop.
 INITD="$RK_DIR/armv8/base-files/etc/init.d"
 RCD="$RK_DIR/armv8/base-files/etc/rc.d"
-if [ -f "$OPT_INIT_SRC" ]; then
-	mkdir -p "$INITD" "$RCD"
-	cp -f "$OPT_INIT_SRC" "$INITD/r28s-opt-partition"
-	chmod +x "$INITD/r28s-opt-partition"
-	ln -sf ../init.d/r28s-opt-partition "$RCD/S99r28s-opt-partition"
-	echo "[6] /opt big-partition init.d service installed"
-else
-	echo "[6] opt-partition init script not found, skip"
-fi
+rm -f "$INITD/r28s-opt-partition" "$RCD/S99r28s-opt-partition"
+echo "[6c] legacy r28s-opt-partition service removed (init.d + rc.d)"
 
 echo "===== Inject R28S done ====="
