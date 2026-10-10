@@ -163,7 +163,11 @@ fi
 # prebuilt blob copied as <variant>-u-boot-rockchip.bin. Patch it in place,
 # idempotently (anchored on the exact block so the *other* prebuilt branch we
 # just added does not fool the guard).
-if ! grep -q 'CURDIR)/files/hugsun-rt28-rk3528-u-boot-rockchip.bin' "$UBOOT_MK"; then
+# Guard MUST be anchored on the InstallDev-only line. Step 8 above already
+# emits the same blob path (in Build/Compile), so a loose grep would match its
+# own output and silently skip this patch -> the generic InstallDev would then
+# cp a non-existent $(PKG_BUILD_DIR)/u-boot-rockchip.bin and break the build.
+if ! grep -qF 'hugsun-rt28-rk3528-u-boot-rockchip.bin $(STAGING_DIR_IMAGE)/' "$UBOOT_MK"; then
 	python3 - "$UBOOT_MK" <<'PY'
 import sys
 p = sys.argv[1]
