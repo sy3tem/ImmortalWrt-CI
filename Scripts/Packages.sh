@@ -37,14 +37,12 @@ if [ -n "$HP_PATH" ]; then
 	echo "homeproxy rule data updated!"
 fi
 
-# ---- NOTE: passwall lyaml dependency is NOT stripped -------------------------
-# 旧 CI 里有一段 `sed -i 's/ +lyaml//g' luci-app-passwall/Makefile`, 理由是
-# "官方 feeds 无 lyaml"。该理由已过时: 官方 immortalwrt/packages 现在自带
-# `lang/lua/lyaml` (其 host 依赖 lua/host + luarocks/host 也都在官方源),
-# downloads.immortalwrt.org 上也确实有 lyaml-*.apk。
-# 因此保留 passwall 的原始依赖 —— 去掉它反而会丢掉 passwall 导入 Clash/YAML
-# 订阅的能力。而且旧写法路径也不对 (feeds 装出来的包在 package/feeds/luci/ 下,
-# 不是 package/luci-app-passwall/), 属于既不生效又误导的死代码。
+# ---- NOTE: proxy stack = OpenClash (nothing to vendor here) ------------------
+# The old passwall + xray-core stack (and the lyaml `sed` hack that used to go
+# with it) was dropped in favour of `luci-app-openclash` — see the proxy block
+# in Config/GENERAL.txt. openclash is fully self-contained in the official
+# immortalwrt/luci + immortalwrt/packages feeds, so unlike iStore / athena-led
+# it needs NO external extraction and NO Makefile patching at all.
 
 # ---- rust: disable ci-llvm (avoids the llvm-bpf host toolchain) -------------
 RUST_FILE=$(find "$TREE_ROOT/feeds/packages/" -maxdepth 3 -type f -wholename "*/rust/Makefile" 2>/dev/null | head -1)
