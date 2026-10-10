@@ -14,7 +14,7 @@
 
 1. **只用官方源码** — `immortalwrt/immortalwrt @ master`。
    不再依赖任何第三方 fork：亚瑟 / 雅典娜 官方树已自带设备定义、DTS、
-   `ipq-wifi` board 数据；`rtp2httpd` / `homeproxy` / `passwall` /
+   `ipq-wifi` board 数据；`rtp2httpd` / `homeproxy` / `openclash` /
    `dockerman` / `argon-config` / `appfilter` 也都在官方 feeds 里。
 2. **固件文件名 100% 与官方一致** — 不做任何重命名。带/不带 WiFi 的差异
    通过 **Release 标签** 区分，而不是改文件名。
@@ -77,10 +77,10 @@ Scripts/
   Settings.sh        默认主题/IP/主机名/时区 + apk 源 + ITV 注入 + 平台注入分发
   Post-Defconfig.sh  defconfig 之后的收尾（无 WiFi 变体裁剪 DEVICE_PACKAGES）
   _trim_wifi.py      Post-Defconfig 的裁剪实现
-  Packages.sh        第三方包处理（homeproxy 规则、passwall lyaml、athena-led…）
+  Packages.sh        第三方包处理（homeproxy 规则、iStore、athena-led…）
   Inject-ITV.sh      IPTV（itv）防火墙固化
   Inject-R28S.sh     R28S 设备树 / board.d / /opt 大分区
-  Inject-RT28.sh     RT28 设备树 / 交换芯片补丁 / 预编译 U-Boot
+  Inject-RT28.sh     RT28 设备树 / 交换芯片补丁 / 预编译 U-Boot（跳过 configure+compile）
 target-patch/
   itv/               itv zone（firewall 片段）+ uci-defaults + hotplug
   r28s/              rk3528-nanopi-r28s.dts、设备 mk 片段、/opt init.d

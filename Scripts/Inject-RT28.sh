@@ -131,23 +131,28 @@ if [ -f "$UBOOT_MK" ] && ! grep -q "U-Boot/hugsun-rt28-rk3528" "$UBOOT_MK"; then
 		print "    hugsun_rt28";
 		print "endef";
 		print "";
+		# Prebuilt factory bootloader: this variant has NO u-boot defconfig, so
+		# configure/compile must be skipped. Appending the override at the END of
+		# the Makefile is useless -- BuildPackage/U-Boot already expanded
+		# Build/Configure into the .configured/.built recipes at eval time.
+		# ifneq() is resolved while parsing, i.e. once per BUILD_VARIANT, so all
+		# other (compiled) variants keep the stock u-boot.mk behaviour.
+		print "ifneq ($(filter hugsun-rt28-rk3528,$(BUILD_VARIANT)),)";
+		print "define Build/Configure/U-Boot";
+		print "	@true";
+		print "endef";
+		print "";
+		print "define Build/Compile/U-Boot";
+		print "	$(CP) $(CURDIR)/files/hugsun-rt28-rk3528-u-boot-rockchip.bin $(PKG_BUILD_DIR)/$(UBOOT_IMAGE)";
+		print "endef";
+		print "endif";
+		print "";
 		done=1;
 	} {print}' "$UBOOT_MK" > "$UBOOT_MK.tmp" && mv "$UBOOT_MK.tmp" "$UBOOT_MK"
 	# append to UBOOT_TARGETS
 	sed -i 's/^\(  nanopi-zero2-rk3528 \\\)$/\1\n  hugsun-rt28-rk3528 \\/' "$UBOOT_MK"
-	# skip compiling: reuse the prebuilt factory bootloader from files/
-	cat >> "$UBOOT_MK" <<'EOF'
-
-# hugsun-rt28-rk3528 reuses the prebuilt factory bootloader in files/
-# (extracted from the vendor 0513 image), so skip compiling and just stage it.
-define Build/Configure
-	$(if $(filter hugsun-rt28-rk3528,$(BUILD_VARIANT)),@true,$(call Build/Configure/U-Boot))
-endef
-
-define Build/Compile
-	$(if $(filter hugsun-rt28-rk3528,$(BUILD_VARIANT)),@true,$(call Build/Compile/U-Boot))
-endef
-EOF
+	# (the prebuilt skip-defines are emitted by the awk block above --
+	#  i.e. *before* the U-Boot variant definitions. See the comment there.)
 	echo "[8] U-Boot/hugsun-rt28-rk3528 added (prebuilt)"
 else
 	echo "[8] U-Boot/hugsun-rt28-rk3528 already present, skip"
