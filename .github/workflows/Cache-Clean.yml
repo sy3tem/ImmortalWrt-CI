@@ -21,4 +21,12 @@ jobs:
         uses: actions/checkout@main
 
       - name: Cache Clean
-        run: gh cache delete --all
+        run: |
+          # `gh cache delete --all` exits 1 when there is nothing to delete
+          # ("X No caches to delete"), which marks this scheduled job as failed.
+          # Check first and exit cleanly when the cache list is empty.
+          if [ -z "$(gh cache list --limit 1)" ]; then
+            echo "No caches to delete."
+            exit 0
+          fi
+          gh cache delete --all
