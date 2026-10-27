@@ -64,11 +64,13 @@
   WRT-CORE.yml       编译核心（被下面三个复用）
   RK-ALL.yml         rockchip 设备矩阵
   QCA-ALL.yml        qualcommax 设备矩阵
+  UEFI-ARMSR.yml     armsr/armv8 UEFI 虚拟机镜像（飞牛 / KVM）
   WRT-TEST.yml       单配置试跑
   Auto-Clean.yml     每日清理
   Cache-Clean.yml    每周清缓存
 Config/
   GENERAL.txt        全局配置（附加到每个设备配置之后）
+  ARMSR-UEFI.txt     armsr/armv8 UEFI 虚拟机
   R28S-WIFI/NOWIFI.txt
   RT28.txt
   JDCLOUD-RE-SS-01-WIFI/NOWIFI.txt
@@ -77,15 +79,40 @@ Scripts/
   Settings.sh        默认主题/IP/主机名/时区 + apk 源 + ITV 注入 + 平台注入分发
   Post-Defconfig.sh  defconfig 之后的收尾（无 WiFi 变体裁剪 DEVICE_PACKAGES）
   _trim_wifi.py      Post-Defconfig 的裁剪实现
-  Packages.sh        第三方包处理（homeproxy 规则、iStore、athena-led…）
+  Packages.sh        第三方包处理（homeproxy 规则、iStore、quickstart、athena-led…）
   Inject-ITV.sh      IPTV（itv）防火墙固化
   Inject-R28S.sh     R28S 设备树 / board.d / /opt 大分区
   Inject-RT28.sh     RT28 设备树 / 交换芯片补丁 / 预编译 U-Boot（跳过 configure+compile）
+  Inject-ARMSR.sh    armsr 网口自适配 / growroot / VM 默认值 注入
+  verify-armsr.sh    用 QEMU + AAVMF 真机启动自检（UEFI / DHCP / growroot / LuCI）
 target-patch/
   itv/               itv zone（firewall 片段）+ uci-defaults + hotplug
   r28s/              rk3528-nanopi-r28s.dts、设备 mk 片段、/opt init.d
   rt28/              RT28 dts / bootscript / 内核补丁 / 预编译 U-Boot / board.d
+  armsr/             网口自适配、ext4 growroot、DHCP 回落、VM 默认值
 ```
+
+## armsr / UEFI 虚拟机（飞牛 fnOS、KVM、QEMU）
+
+`UEFI-ARMSR` workflow 编 `Config/ARMSR-UEFI.txt`，产出 ImmortalWrt 官方命名的
+`immortalwrt-*-armsr-armv8-generic-{ext4,squashfs}-combined-efi.img.gz` 和
+**8 GiB 虚拟容量**的 `.qcow2`（WRT-CORE 打包阶段用 `qemu-img resize` 抬过）。
+镜像为 GPT + FAT ESP（GRUB `BOOTAA64.EFI`）+ ext4 rootfs，**只走 UEFI**，不需要 U-Boot。
+
+首次开机（`target-patch/armsr/files`）：
+
+| 网口数 | 行为 |
+| --- | --- |
+| 1 | 该口作 lan，**DHCP 客户端**；60 s 拿不到租约回落 `192.168.100.254/24`（网关 `.1`）。默认不做 NAT |
+| ≥2 | 第一个口 wan（DHCP + DHCPv6），其余桥接进 lan，`192.168.100.1/24` + DHCP 服务器 + RA，wan 开 masq |
+
+`/etc/init.d/growroot` 首启把 p2 和 ext4 扩到整块虚拟磁盘；docker 数据在 `/opt/docker`。
+`luci-app-quickstart`（iStoreOS 首页）随固件编入，见 `Scripts/Packages.sh` 里的说明：
+只取 LuCI 部分，iStoreOS 那个 Go 守护进程不在任何 feed 里，依赖它的卡片为空。
+
+编译完 WRT-CORE 会用 `Scripts/verify-armsr.sh` 以 edk2/AAVMF 固件真跑一遍虚机
+（非阻断步骤），日志里能看到 UEFI 启动 / DHCP / 扩容 / LuCI / rtp2httpd 的检查结果。
+
 
 ## IPTV / itv 说明
 

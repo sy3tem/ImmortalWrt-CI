@@ -72,23 +72,44 @@ jobs:
         uses: actions/checkout@main
 
       - name: Initialization Environment
+        # 只装编译依赖就够。原来的 apt full-upgrade 在 runner 上能跑 6 分钟到 3 小时
+        # （见历史 run：01:02 -> 04:16），是整条流水线最不可控的一段，直接去掉。
+        # 官方 init_build_environment.sh 仍会用，但限时 8 分钟；超时就退回本文件
+        # 自带的依赖清单，保证这一步最长 15 分钟。
+        timeout-minutes: 15
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo -E apt -yqq purge firefox
-          sudo -E apt -yqq update
-          sudo -E apt -yqq full-upgrade
-          sudo -E apt -yqq autoremove --purge
-          sudo -E apt -yqq autoclean
-          sudo -E apt -yqq clean
-          sudo -E apt -yqq install dos2unix libfuse-dev
-          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          set -o pipefail
+
+          sudo -E apt-get -yq update
+          sudo -E apt-get -yq purge firefox 2>/dev/null || true
+
+          DEPS="build-essential gcc g++ make gawk gettext git libncurses-dev libssl-dev \
+            libgnutls28-dev python3 python3-pyelftools python3-setuptools rsync unzip \
+            zlib1g-dev file wget curl subversion flex bison bc cpio time swig libelf-dev \
+            liblzma-dev device-tree-compiler u-boot-tools ccache dos2unix libfuse-dev \
+            zstd xxd patch diffstat quilt autoconf automake libtool pkg-config"
+          EXTRA="python3-distutils libncurses5-dev"
+          sudo -E apt-get -yq --no-install-recommends install $DEPS
+          sudo -E apt-get -yq install $EXTRA 2>/dev/null || true
+
+          echo "== trying the upstream build-environment script (8 min cap)"
+          if sudo timeout 480 bash -c 'DEBIAN_FRONTEND=noninteractive bash <(curl -fsSL --max-time 60 https://build-scripts.immortalwrt.org/init_build_environment.sh)'; then
+            echo "upstream build-environment script finished"
+          else
+            echo "WARN: upstream script timed out or failed; the explicit dependency list above is what we rely on"
+          fi
+
+          sudo -E apt-get -yq autoremove --purge
+          sudo -E apt-get -yq clean
           sudo -E systemctl daemon-reload
           sudo -E timedatectl set-timezone "Asia/Shanghai"
 
           sudo mkdir -p /mnt/build_wrt
           sudo chown $USER:$USER /mnt/build_wrt
-          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+          sudo ln -sfn /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+          date -u
 
       - name: Initialization Values
         run: |
