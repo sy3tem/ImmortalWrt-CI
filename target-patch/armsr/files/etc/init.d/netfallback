@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+#
+# Single-arm safety net: if lan is a DHCP client and no lease showed up within
+# ~60 s, fall back to a fixed address so the box stays reachable from the LAN.
+# Only runs for proto=dhcp; a static or PPPoE lan is left alone.
+
+START=99
+STOP=10
+
+FALLBACK_IP=192.168.100.254
+FALLBACK_GW=192.168.100.1
+
+has_lease() {
+	ubus call network.interface.lan status 2>/dev/null \
+		| jsonfilter -e '@.ipv4-address[0].address' 2>/dev/null | grep -q .
+}
+
+start() {
+	[ "$(uci -q get network.lan.proto)" = "dhcp" ] || return 0
+	(
+		i=0
+		while [ "$i" -lt 20 ]; do
+			has_lease && exit 0
+			sleep 3
+			i=$((i + 1))
+		done
+		logger -t netfallback "no DHCP lease on lan after 60s, using ${FALLBACK_IP}"
+		uci -q set network.lan.proto='static'
+		uci -q set network.lan.ipaddr="$FALLBACK_IP"
+		uci -q set network.lan.netmask='255.255.255.0'
+		uci -q set network.lan.gateway="$FALLBACK_GW"
+		uci -q set network.lan.dns="$FALLBACK_GW"
+		uci -q commit network
+		/etc/init.d/network reload
+	) &
+}

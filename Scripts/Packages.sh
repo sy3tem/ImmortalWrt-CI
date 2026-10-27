@@ -76,6 +76,24 @@ if [ ! -d "$PKG_PATH/luci-app-store" ]; then
 	echo "iStore (luci-app-store + luci-lib-taskd + luci-lib-xterm + taskd) extracted!"
 fi
 
+# ---- luci-app-quickstart — external (linkease/nas-packages-luci), armsr only -
+# iStoreOS 的首页仪表盘。官方 feeds 没有这个包，源码在 linkease/nas-packages-luci。
+# 上游 Makefile 依赖 `quickstart`（iStoreOS 的 Go 守护进程，不在任何 feed 里）和
+# luci-app-store，这里只取 LuCI 部分：依赖裁剪掉，控制器里的 `pgrep quickstart`
+# 门槛由 Scripts/Inject-ARMSR.sh 去掉，仪表盘可以直接打开。
+# 预期：网络/端口/流量/磁盘/容器等卡片正常；依赖 istore 守护进程(127.0.0.1:3038)
+# 的卡片（应用商店、部分 NAS 面板）为空，不影响路由功能。
+if [[ "${WRT_CONFIG^^}" == *ARMSR* ]] && [ ! -d "$PKG_PATH/luci-app-quickstart" ]; then
+	echo " "
+	git clone -q --depth=1 --single-branch --branch "main" \
+		"https://github.com/linkease/nas-packages-luci.git" "$TREE_ROOT/qs-tmp"
+	cp -rf "$TREE_ROOT/qs-tmp/luci/luci-app-quickstart" "$PKG_PATH/"
+	rm -rf "$TREE_ROOT/qs-tmp"
+	sed -i 's|^LUCI_DEPENDS:=.*|LUCI_DEPENDS:=+luci-compat +luci-lib-jsonc|' \
+		"$PKG_PATH/luci-app-quickstart/Makefile"
+	echo "luci-app-quickstart extracted (daemon deps trimmed)!"
+fi
+
 # ---- athena-led (雅典娜 RE-CS-02 点阵屏) — external, pinned to v2.4.0 -------
 # Two packages: athena-led (core) + luci-app-athena-led (LuCI).
 # Device-scoped: only pulled for RE-CS-02 configs.

@@ -1,0 +1,131 @@
+#!/bin/sh
+#
+# First-boot network autoconfiguration — works with however many NICs exist.
+#
+#   1 NIC   单臂：该口就是 lan，DHCP 客户端。
+#           60 秒还没拿到地址就回落到 192.168.100.254/24（网关 192.168.100.1），
+#           见 /etc/init.d/netfallback。不启用 masq：它只是 LAN 上的一台设备，
+#           要做旁路由在 LuCI 里勾一下「强制 NAT」即可。
+#
+#   >=2 NIC 路由器：第一个口作 wan（DHCP + DHCPv6），其余桥接进 lan，
+#           lan = 192.168.100.1/24，开 DHCP 服务器 + RA。
+#
+# 网口列表优先取 /etc/board.json（真机的物理口），虚拟机里没有 ports 时退回
+# /sys/class/net 里的以太网口。
+
+. /lib/functions.sh
+
+PORT_RE='^(eth|end|lan|wan|enp|eno|ens|enx)[0-9a-z]*$'
+FALLBACK_IP=192.168.100.254
+ROUTER_IP=192.168.100.1
+
+list_ports() {
+	local p=""
+	if [ -f /etc/board.json ]; then
+		p="$(jsonfilter -i /etc/board.json -e '@.network.*.ports[*]' 2>/dev/null)"
+	fi
+	if [ -z "$p" ]; then
+		p="$(ls /sys/class/net 2>/dev/null | grep -E "$PORT_RE")"
+	fi
+	printf '%s\n' $p | grep -E "$PORT_RE" | sort -u
+}
+
+set_single_arm() {
+	local dev="$1"
+
+	uci -q delete network.wan
+	uci -q delete network.wan6
+
+	uci -q set network.lan='interface'
+	uci -q set network.lan.device="$dev"
+	uci -q set network.lan.proto='dhcp'
+	uci -q delete network.lan.ipaddr
+	uci -q delete network.lan.netmask
+	uci -q delete network.lan.gateway
+	uci -q delete network.lan.dns
+	uci -q delete network.lan.type
+
+	# no DHCP server / RA here: this box is a client on the LAN
+	uci -q set dhcp.lan.ignore='1'
+	uci -q delete dhcp.lan.start
+	uci -q delete dhcp.lan.limit
+	uci -q delete dhcp.lan.leasetime
+	uci -q commit dhcp
+
+	# 不做 NAT：单臂默认是「LAN 上的一台服务器」，旁路由模式由用户在 LuCI 决定
+	lan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='lan'$/\1/p" | head -n 1)"
+	[ -n "$lan_zone" ] && uci -q set "firewall.${lan_zone}.masq='0'"
+
+	echo "nic-autoconfig: single NIC ($dev) -> lan dhcp, fallback $FALLBACK_IP"
+}
+
+set_router() {
+	local wan="$1"
+	shift
+	local lan_ports="$*"
+	local p
+
+	uci -q delete network.lan
+	uci -q delete network.wan
+	uci -q delete network.wan6
+
+	uci -q set network.wan='interface'
+	uci -q set network.wan.device="$wan"
+	uci -q set network.wan.proto='dhcp'
+	uci -q set network.wan6='interface'
+	uci -q set network.wan6.device='@wan'
+	uci -q set network.wan6.proto='dhcpv6'
+
+	uci -q set network.brlan='device'
+	uci -q set network.brlan.name='br-lan'
+	uci -q set network.brlan.type='bridge'
+	uci -q set network.brlan.ports="$lan_ports"
+
+	uci -q set network.lan='interface'
+	uci -q set network.lan.device='br-lan'
+	uci -q set network.lan.proto='static'
+	uci -q set network.lan.ipaddr="$ROUTER_IP"
+	uci -q set network.lan.netmask='255.255.255.0'
+	uci -q set network.lan.ip6assign='60'
+
+	# DHCP server on lan (config_generate defaults are fine once the
+	# interface exists again; make sure they are present)
+	uci -q set dhcp.lan.interface='lan'
+	uci -q set dhcp.lan.start='100'
+	uci -q set dhcp.lan.limit='150'
+	uci -q set dhcp.lan.leasetime='12h'
+	uci -q set dhcp.lan.dhcpv6='server'
+	uci -q set dhcp.lan.ra='server'
+	uci -q delete dhcp.lan.ignore
+	uci -q commit dhcp
+
+	# NAT on wan
+	wan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='wan'$/\1/p" | head -n 1)"
+	[ -n "$wan_zone" ] && uci -q set "firewall.${wan_zone}.masq='1'"
+
+	echo "nic-autoconfig: $(( $# + 1 )) NICs -> wan=$wan lan=$lan_ports ($ROUTER_IP)"
+}
+
+main() {
+	local ports n
+	ports="$(list_ports)"
+	n="$(printf '%s\n' "$ports" | grep -c .)"
+
+	if [ "$n" -le 0 ]; then
+		echo "nic-autoconfig: no ethernet port found, keeping the default config"
+		return 0
+	fi
+
+	if [ "$n" -eq 1 ]; then
+		set_single_arm "$ports"
+	else
+		set_router $ports
+	fi
+
+	uci -q commit network
+	uci -q commit firewall
+	return 0
+}
+
+main "$@"
+exit 0
