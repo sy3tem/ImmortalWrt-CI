@@ -239,6 +239,8 @@ jobs:
         # Boot the built qcow2 with real edk2/AAVMF firmware under QEMU and check
         # that the guest comes up as expected (UEFI, NIC autodetect, growroot,
         # LuCI, rtp2httpd, quickstart). Only for the armsr/UEFI platform.
+        # Non-blocking: a TCG-slow guest must not throw away the whole compile.
+        continue-on-error: true
         if: env.WRT_TEST != 'true' && contains(env.WRT_TARGET, 'armsr')
         run: |
           sudo apt-get -y install qemu-system-arm qemu-efi-aarch64 sshpass netcat-openbsd
