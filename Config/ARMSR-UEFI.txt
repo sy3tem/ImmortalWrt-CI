@@ -17,6 +17,11 @@ CONFIG_TARGET_armsr_armv8=y
 CONFIG_TARGET_DEVICE_armsr_armv8_DEVICE_generic=y
 
 #--- image formats ---
+# ext4 rootfs 默认仅 160 MiB（armsr 平台默认）。本镜像同时开启 EXT4FS 并装入
+# docker / openclash / iStore / quickstart 等大量包，未压缩体积超出 160 MiB，
+# 导致 make_ext4fs 报 "out of space"（RT28/R28S 只产 squashfs 不触发）。
+# 放大到 512 MiB；虚拟机首启 growroot 会再扩到整块虚拟磁盘，仅影响初始镜像上限。
+CONFIG_TARGET_ROOTFS_PARTSIZE=512
 # ext4 = 默认（虚拟机里可扩容）；squashfs = 可一键恢复出厂
 CONFIG_TARGET_ROOTFS_EXT4FS=y
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
