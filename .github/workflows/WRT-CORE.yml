@@ -235,6 +235,16 @@ jobs:
             make clean -j$(nproc)
           fi
 
+      - name: UEFI Boot Smoke Test (armsr)
+        # Boot the built qcow2 with real edk2/AAVMF firmware under QEMU and check
+        # that the guest comes up as expected (UEFI, NIC autodetect, growroot,
+        # LuCI, rtp2httpd, quickstart). Only for the armsr/UEFI platform.
+        if: env.WRT_TEST != 'true' && contains(env.WRT_TARGET, 'armsr')
+        run: |
+          sudo apt-get -y install qemu-system-arm qemu-efi-aarch64 sshpass netcat-openbsd
+          chmod +x "$GITHUB_WORKSPACE/Scripts/verify-armsr.sh"
+          bash "$GITHUB_WORKSPACE/Scripts/verify-armsr.sh" ./wrt/upload
+
       - name: Upload Test Config
         # TEST runs never touch the Releases page; hand the generated .config
         # back as a workflow artifact so it can still be inspected/verified.
