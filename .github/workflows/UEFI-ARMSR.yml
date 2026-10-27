@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MIT
+# armsr/armv8 — 通用 UEFI (edk2/AAVMF) 虚拟机镜像
+#
+# 目标平台：fnOS（飞牛）虚拟机 / KVM / QEMU，virtio 磁盘 + virtio 网卡，
+#           GPT + FAT ESP(GRUB BOOTAA64.EFI) + ext4 rootfs，无需 U-Boot。
+# 产物：immortalwrt-*-armsr-armv8-generic-{ext4,squashfs}-combined-efi.img.gz
+#       + 8 GiB 虚拟容量的 .qcow2（可直接在“导入虚拟磁盘”里选）
+#
+# 网口数量首启自动识别：1 口 = 单臂(DHCP + 192.168.100.254 回落)，>=2 口 = wan+lan 路由器。
+
+name: UEFI-ARMSR
+
+on:
+  workflow_dispatch:
+    inputs:
+      SOURCE:
+        default: 'immortalwrt/immortalwrt'
+        required: true
+        type: choice
+        options:
+          - immortalwrt/immortalwrt
+      BRANCH:
+        default: 'master'
+        required: true
+        type: string
+      PACKAGE:
+        description: '临时追加插件（.config 行，换行分隔）'
+        required: false
+        type: string
+      TEST:
+        description: '仅输出配置文件，不编译固件。'
+        default: 'false'
+        required: true
+        type: boolean
+
+permissions: write-all
+
+jobs:
+  uefi:
+    name: ARMSR-UEFI
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_CONFIG: ARMSR-UEFI
+      WRT_THEME: argon
+      WRT_NAME: ImmortalWrt
+      WRT_SSID: ImmortalWrt
+      WRT_WORD: '12345678'
+      WRT_IP: 192.168.100.1
+      WRT_PW: password
+      WRT_REPO: https://github.com/${{inputs.SOURCE}}.git
+      WRT_BRANCH: ${{inputs.BRANCH}}
+      WRT_SOURCE: ${{inputs.SOURCE}}
+      WRT_PACKAGE: ${{inputs.PACKAGE}}
+      WRT_TEST: ${{inputs.TEST}}

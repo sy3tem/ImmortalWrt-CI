@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# armsr / UEFI VM defaults that are not covered by Scripts/Settings.sh.
+# Runs once, on the first boot.
+
+# --- docker data on the (grown) rootfs: the only writable storage in a VM ----
+mkdir -p /opt/docker
+if [ -f /etc/config/dockerd ]; then
+	uci -q set dockerd.globals.data_root='/opt/docker/'
+	uci -q commit dockerd
+fi
+
+# --- ssh: password login must work on the first boot -----------------------
+if [ -f /etc/config/dropbear ]; then
+	uci -q set dropbear.@dropbear[0].PasswordAuth='on'
+	uci -q set dropbear.@dropbear[0].RootPasswordAuth='on'
+	uci -q commit dropbear
+fi
+
+# --- enable the first-boot rootfs grow + DHCP fallback helpers --------------
+[ -x /etc/init.d/growroot ] && /etc/init.d/growroot enable
+[ -x /etc/init.d/netfallback ] && /etc/init.d/netfallback enable
+
+# --- no wireless in this target: hide the Wireless menu --------------------
+if [ ! -x /usr/sbin/wpad ] && [ ! -x /usr/sbin/hostapd ]; then
+	rm -f /etc/config/wireless
+fi
+
+exit 0

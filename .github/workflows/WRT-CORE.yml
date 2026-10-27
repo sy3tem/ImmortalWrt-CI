@@ -219,6 +219,19 @@ jobs:
             find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
 
+            # --- armsr / UEFI VM (fnOS, KVM): 8 GiB sparse qcow2 ---------------
+            # 出厂 qcow2 只有 ~64 MiB 虚拟容量，导入虚拟机后放不下 docker 镜像。
+            # 先把虚拟容量抬到 8 GiB，growroot 首启会把 p2 和 ext4 扩满整块盘。
+            if [[ "${WRT_TARGET,,}" == *armsr* ]]; then
+              command -v qemu-img >/dev/null || sudo apt-get -y install qemu-utils
+              for q in ./upload/*.qcow2; do
+                [ -f "$q" ] || continue
+                qemu-img resize "$q" 8G
+                echo "resized: $q"
+                qemu-img info "$q" | head -3
+              done
+            fi
+
             make clean -j$(nproc)
           fi
 

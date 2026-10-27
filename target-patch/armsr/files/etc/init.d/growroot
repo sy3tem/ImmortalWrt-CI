@@ -1,0 +1,57 @@
+#!/bin/sh /etc/rc.common
+#
+# Grow the rootfs partition + ext4 filesystem to fill the virtual disk.
+#
+# The shipped armsr image is ~64 MiB so it imports and copies fast. Once it sits
+# on a bigger virtual disk (or the qcow2 was resized before the first boot), the
+# free space behind partition 2 is useless until both the partition table and the
+# filesystem grow.
+#
+# Safe on every boot: when the partition already ends at the last sector sfdisk
+# fails and nothing happens. squashfs installs are left alone (growroot only
+# touches ext2/3/4 root filesystems).
+
+START=19
+STOP=90
+
+find_root() {
+	local root
+	root="$(awk '$2 == "/" {print $1; exit}' /proc/mounts)"
+	case "$root" in
+		/dev/*) ;;
+		*) return 1 ;;
+	esac
+	ROOT_DEV="$root"
+	case "$root" in
+		*p[0-9]*) PART_NUM="${root##*p}" ;;
+		*) PART_NUM="${root##*[!0-9]}" ;;
+	esac
+	case "$PART_NUM" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	DISK_DEV="$(echo "$root" | sed -E 's/p?[0-9]+$//')"
+	[ -b "$DISK_DEV" ] || return 1
+	return 0
+}
+
+grow() {
+	local fstype
+	fstype="$(blkid -o value -s TYPE "$ROOT_DEV" 2>/dev/null)"
+	case "$fstype" in
+		ext2|ext3|ext4) ;;
+		*) return 0 ;;
+	esac
+
+	echo ", +" | sfdisk -N "$PART_NUM" --force --no-reread -q "$DISK_DEV" >/dev/null 2>&1 || return 0
+	partx -u -n "$PART_NUM" "$DISK_DEV" >/dev/null 2>&1
+	sleep 1
+	resize2fs "$ROOT_DEV" >/dev/null 2>&1 || return 0
+	logger -t growroot "rootfs grown on $ROOT_DEV (p$PART_NUM)"
+	return 0
+}
+
+start() {
+	find_root || return 0
+	grow
+	return 0
+}

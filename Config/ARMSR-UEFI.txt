@@ -1,0 +1,87 @@
+# armsr/armv8 — UEFI（edk2 / AAVMF）虚拟机镜像
+#
+# 目标：ImmortalWrt 官方 armsr/armv8 (Generic EFI Boot)，产物是标准 GPT 磁盘：
+#   p1 = FAT ESP（GRUB，BOOTAA64.EFI）+ p2 = ext4 rootfs
+# 在 fnOS（飞牛）虚拟机上用 UEFI 固件 + virtio 磁盘/网卡直接启动，不需要 U-Boot。
+#
+# 网口数量在首次开机时自动识别（target-patch/armsr/files/etc/uci-defaults/92-nic-autoconfig）：
+#   1 个网口  -> 单臂：该口作 lan，DHCP 客户端；60 秒拿不到地址则回落到
+#               192.168.100.254/24（网关 192.168.100.1）
+#   >=2 网口 -> 路由器：第一个口作 wan（DHCP/DHCPv6），其余桥接进 lan（192.168.100.1）
+#
+# rootfs 首启自动扩到整块虚拟磁盘（growroot），docker 数据在 /opt/docker。
+
+#--- target ---
+CONFIG_TARGET_armsr=y
+CONFIG_TARGET_armsr_armv8=y
+CONFIG_TARGET_DEVICE_armsr_armv8_DEVICE_generic=y
+
+#--- image formats ---
+# ext4 = 默认（虚拟机里可扩容）；squashfs = 可一键恢复出厂
+CONFIG_TARGET_ROOTFS_EXT4FS=y
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+CONFIG_TARGET_IMAGES_GZIP=y
+CONFIG_TARGET_ROOTFS_INITRAMFS=n
+
+#--- luci ---
+CONFIG_PACKAGE_luci-app-argon-config=y
+CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+CONFIG_PACKAGE_luci-app-diskman=y
+CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y
+CONFIG_PACKAGE_luci-app-autoreboot=y
+CONFIG_PACKAGE_luci-i18n-autoreboot-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+
+#--- upnp ---
+CONFIG_PACKAGE_miniupnpd-nftables=y
+CONFIG_PACKAGE_luci-app-upnp=y
+CONFIG_PACKAGE_luci-i18n-upnp-zh-cn=y
+
+#--- IPTV: multicast -> HTTP ---
+CONFIG_PACKAGE_rtp2httpd=y
+CONFIG_PACKAGE_luci-app-rtp2httpd=y
+CONFIG_PACKAGE_luci-i18n-rtp2httpd-zh-cn=y
+
+#--- quickstart 首页（iStoreOS 风格仪表盘，源码现场克隆，见 Scripts/Packages.sh）---
+CONFIG_PACKAGE_luci-app-quickstart=y
+CONFIG_PACKAGE_luci-app-nlbwmon=y
+CONFIG_PACKAGE_nlbwmon=y
+CONFIG_PACKAGE_luci-i18n-nlbwmon-zh-cn=y
+
+#--- docker ---
+CONFIG_PACKAGE_docker=y
+CONFIG_PACKAGE_dockerd=y
+CONFIG_PACKAGE_containerd=y
+CONFIG_PACKAGE_docker-compose=y
+CONFIG_PACKAGE_runc=y
+CONFIG_PACKAGE_tini=y
+CONFIG_PACKAGE_luci-app-dockerman=y
+CONFIG_PACKAGE_luci-i18n-dockerman-zh-cn=y
+
+#--- storage / filesystem tools (growroot / diskman) ---
+CONFIG_PACKAGE_lsblk=y
+CONFIG_PACKAGE_fdisk=y
+CONFIG_PACKAGE_losetup=y
+CONFIG_PACKAGE_resize2fs=y
+CONFIG_PACKAGE_sfdisk=y
+CONFIG_PACKAGE_parted=y
+CONFIG_PACKAGE_partx-utils=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_kmod-fs-exfat=y
+CONFIG_PACKAGE_kmod-fs-ntfs3=y
+CONFIG_PACKAGE_kmod-usb-storage-uas=y
+
+#--- misc ---
+CONFIG_PACKAGE_zram-swap=y
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_nmap=y
+CONFIG_PACKAGE_qrencode=y
+CONFIG_PACKAGE_usbutils=y
+CONFIG_PACKAGE_bash=y
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_openssh-sftp-server=y
+CONFIG_PACKAGE_ip-full=y

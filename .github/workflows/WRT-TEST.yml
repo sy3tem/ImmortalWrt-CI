@@ -19,6 +19,7 @@ on:
           - JDCLOUD-RE-SS-01-NOWIFI
           - JDCLOUD-RE-CS-02-WIFI
           - JDCLOUD-RE-CS-02-NOWIFI
+          - ARMSR-UEFI
       SOURCE:
         default: 'immortalwrt/immortalwrt'
         required: true

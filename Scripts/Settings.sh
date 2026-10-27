@@ -94,6 +94,10 @@ bash "$GITHUB_WORKSPACE/Scripts/Inject-ITV.sh"
 CFG_LC="${WRT_CONFIG,,}"
 
 case "$CFG_LC" in
+*armsr*)
+	# armsr/armv8 — UEFI (edk2/AAVMF) 虚拟机镜像（fnOS / KVM）
+	bash "$GITHUB_WORKSPACE/Scripts/Inject-ARMSR.sh"
+	;;
 *rt28*)
 	# Hugsun RT28 (RK3528 + RTL8367B switch + MT7916 WiFi)
 	bash "$GITHUB_WORKSPACE/Scripts/Inject-RT28.sh"
