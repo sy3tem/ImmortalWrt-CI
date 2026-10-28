@@ -45,4 +45,23 @@ else
 	echo "quickstart: package not present, skipped"
 fi
 
+# ---- fix: official master armsr image Makefile still references the dropped
+#   kmod-thunderx-net (Cavium ThunderX NIC driver). The package no longer exists
+#   in current master (netdevices.mk), but image/Makefile forces it into
+#   DEVICE_PACKAGES via $(if $(CONFIG_aarch64),kmod-thunderx-net). That makes
+#   every aarch64 armsr image fail at the target-dir stage with
+#   "kmod-thunderx-net (no such package)". A VM image (fnOS/KVM/QEMU) never
+#   needs this physical NIC driver, so just drop the reference.
+IMG_MK="$TREE/target/linux/armsr/image/Makefile"
+if [ -f "$IMG_MK" ]; then
+	if grep -q 'kmod-thunderx-net' "$IMG_MK"; then
+		sed -i 's/ $(if $(CONFIG_aarch64),kmod-thunderx-net)//g' "$IMG_MK"
+		echo "armsr: dropped stale kmod-thunderx-net ref (official master bug)"
+	else
+		echo "armsr: kmod-thunderx-net ref not present, skipped"
+	fi
+else
+	echo "armsr: image/Makefile not found, skipped"
+fi
+
 echo "===== Inject armsr done ====="
