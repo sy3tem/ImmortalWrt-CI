@@ -76,7 +76,7 @@ jobs:
         # （见历史 run：01:02 -> 04:16），是整条流水线最不可控的一段，直接去掉。
         # 官方 init_build_environment.sh 仍会用，但限时 8 分钟；超时就退回本文件
         # 自带的依赖清单，保证这一步最长 15 分钟。
-        timeout-minutes: 15
+        timeout-minutes: 20
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -95,11 +95,31 @@ jobs:
           sudo -E apt-get -yq install $EXTRA 2>/dev/null || true
 
           echo "== trying the upstream build-environment script (8 min cap)"
-          if sudo timeout 480 bash -c 'DEBIAN_FRONTEND=noninteractive bash <(curl -fsSL --max-time 60 https://build-scripts.immortalwrt.org/init_build_environment.sh)'; then
+          # 在独立进程组里运行；超时时 kill-after 连同子进程一起杀干净。
+          # 否则被 SIGTERM 的 bash 派生的 dpkg/apt 子进程会沦为孤儿，继续持有
+          # /var/lib/dpkg/lock 配置大包（如 texlive），导致下面的 autoremove/clean
+          # 拿不到锁而失败（exit 100，见历史失败 run）。
+          if sudo timeout --kill-after=30 480 bash -c 'set -m; DEBIAN_FRONTEND=noninteractive bash <(curl -fsSL --max-time 60 https://build-scripts.immortalwrt.org/init_build_environment.sh)'; then
             echo "upstream build-environment script finished"
           else
             echo "WARN: upstream script timed out or failed; the explicit dependency list above is what we rely on"
           fi
+
+          # 上游脚本被超时杀掉后，可能留下仍在配置软件包（texlive 等）的孤儿 dpkg
+          # 进程并持有锁。先耐心等其退出释放锁；超时则强制清锁兜底，保证后续 apt 可用。
+          i=0
+          while pgrep -f '/usr/bin/dpkg|apt-get|/usr/lib/apt' >/dev/null 2>&1; do
+            [ "$i" -ge 40 ] && break
+            echo "waiting for leftover dpkg/apt to release lock (attempt $((i+1)))..."
+            sleep 5
+            i=$((i+1))
+          done
+          if pgrep -f '/usr/bin/dpkg|apt-get|/usr/lib/apt' >/dev/null 2>&1; then
+            echo "leftover dpkg/apt still running after wait; force-killing and clearing locks"
+            sudo pkill -9 -f '/usr/bin/dpkg|apt-get|/usr/lib/apt' 2>/dev/null || true
+            sleep 3
+          fi
+          sudo rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock 2>/dev/null || true
 
           sudo -E apt-get -yq autoremove --purge
           sudo -E apt-get -yq clean
