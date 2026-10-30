@@ -64,4 +64,21 @@ else
 	echo "armsr: image/Makefile not found, skipped"
 fi
 
+# ---- only emit the bootable VM disk image (combined-efi); drop the
+#   non-bootable rootfs.img(.gz). For a VM (fnOS / KVM / QEMU) only the
+#   combined-efi image (GPT + EFI + squashfs rootfs) is needed; rootfs.img
+#   has no bootloader / partition table and just clutters the release.
+IMG_MK2="$TREE/target/linux/armsr/image/Makefile"
+if [ -f "$IMG_MK2" ]; then
+	if grep -q 'IMAGES-y := rootfs.img.gz' "$IMG_MK2"; then
+		sed -i 's/IMAGES-y := rootfs.img.gz/IMAGES-y := combined-efi.img.gz/' "$IMG_MK2"
+		sed -i 's/IMAGES-y := rootfs.img/IMAGES-y := combined-efi.img/' "$IMG_MK2"
+		echo "armsr: IMAGES-y restricted to combined-efi only (VM image)"
+	else
+		echo "armsr: IMAGES-y already patched, skipped"
+	fi
+else
+	echo "armsr: image/Makefile not found, skipped"
+fi
+
 echo "===== Inject armsr done ====="
