@@ -94,32 +94,31 @@ jobs:
           sudo -E apt-get -yq --no-install-recommends install $DEPS
           sudo -E apt-get -yq install $EXTRA 2>/dev/null || true
 
-          echo "== trying the upstream build-environment script (8 min cap)"
-          # 在独立进程组里运行；超时时 kill-after 连同子进程一起杀干净。
-          # 否则被 SIGTERM 的 bash 派生的 dpkg/apt 子进程会沦为孤儿，继续持有
-          # /var/lib/dpkg/lock 配置大包（如 texlive），导致下面的 autoremove/clean
-          # 拿不到锁而失败（exit 100，见历史失败 run）。
-          if sudo timeout --kill-after=30 480 bash -c 'set -m; DEBIAN_FRONTEND=noninteractive bash <(curl -fsSL --max-time 60 https://build-scripts.immortalwrt.org/init_build_environment.sh)'; then
-            echo "upstream build-environment script finished"
+          # 默认跳过官方 init_build_environment.sh：该脚本会拉取并安装 texlive /
+          # lmodern 等大量文档工具（固件编译并不需要），且偶发在 8 分钟超时后被
+          # 杀，遗留 half-configured 的 dpkg 包，引发锁冲突与 "dpkg was interrupted"
+          # 失败（见历史失败 run）。历史已验证：仅用上方 DEPS/EXTRA 清单即可成功
+          # 编译（上游脚本超时退回清单时 RK/QCA/ARMSR 均成功）。如确需启用上游
+          # 脚本，将下方 WRT_SKIP_UPSTREAM 设为非 1 即可。
+          WRT_SKIP_UPSTREAM="${WRT_SKIP_UPSTREAM:-1}"
+          if [ "$WRT_SKIP_UPSTREAM" != "1" ]; then
+            echo "== running upstream build-environment script (8 min cap) =="
+            if sudo timeout 480 bash -c 'DEBIAN_FRONTEND=noninteractive bash <(curl -fsSL --max-time 60 https://build-scripts.immortalwrt.org/init_build_environment.sh)'; then
+              echo "upstream build-environment script finished"
+            else
+              echo "WARN: upstream script timed out or failed; explicit dependency list above is what we rely on"
+            fi
+            # 等孤儿 dpkg/apt 自然完成配置并释放锁，再修复可能的 half-configured 包
+            i=0
+            while pgrep -f '/usr/bin/dpkg|apt-get|/usr/lib/apt' >/dev/null 2>&1; do
+              [ "$i" -ge 120 ] && break
+              sleep 5; i=$((i+1))
+            done
+            sudo dpkg --configure -a || true
+            sudo rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock 2>/dev/null || true
           else
-            echo "WARN: upstream script timed out or failed; the explicit dependency list above is what we rely on"
+            echo "== skip upstream build-environment script (use explicit DEPS only) =="
           fi
-
-          # 上游脚本被超时杀掉后，可能留下仍在配置软件包（texlive 等）的孤儿 dpkg
-          # 进程并持有锁。先耐心等其退出释放锁；超时则强制清锁兜底，保证后续 apt 可用。
-          i=0
-          while pgrep -f '/usr/bin/dpkg|apt-get|/usr/lib/apt' >/dev/null 2>&1; do
-            [ "$i" -ge 40 ] && break
-            echo "waiting for leftover dpkg/apt to release lock (attempt $((i+1)))..."
-            sleep 5
-            i=$((i+1))
-          done
-          if pgrep -f '/usr/bin/dpkg|apt-get|/usr/lib/apt' >/dev/null 2>&1; then
-            echo "leftover dpkg/apt still running after wait; force-killing and clearing locks"
-            sudo pkill -9 -f '/usr/bin/dpkg|apt-get|/usr/lib/apt' 2>/dev/null || true
-            sleep 3
-          fi
-          sudo rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock 2>/dev/null || true
 
           sudo -E apt-get -yq autoremove --purge
           sudo -E apt-get -yq clean
