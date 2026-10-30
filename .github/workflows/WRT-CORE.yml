@@ -133,6 +133,9 @@ jobs:
       - name: Initialization Values
         run: |
           echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
+          # 仅含"日期"的标签，用于把同一天各平台（RK / QCA / ARMSR）的固件
+          # 合并进【同一个 Release】，避免每个平台各生成一个 Release 导致列表越积越多。
+          echo "WRT_DATE_DAY=$(TZ=UTC-8 date +"%y.%m.%d")" >> $GITHUB_ENV
           echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
           echo "WRT_KVER=none" >> $GITHUB_ENV
@@ -302,10 +305,13 @@ jobs:
         if: env.WRT_TEST != 'true'
         uses: softprops/action-gh-release@master
         with:
-          tag_name: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
+          # 按"天"聚合：同一天 RK / QCA / ARMSR 所有平台的固件合并进同一个 Release，
+          # 所有附件统一显示在一个 Release 下，而不是每个平台挨个列出。
+          tag_name: ${{env.WRT_BRANCH}}-${{env.WRT_DATE_DAY}}
           files: ./wrt/upload/*.*
           body: |
-            平台固件包，内含多个设备，请选择你需要的设备固件。
+            本 Release 聚合了同一天构建的全部平台固件（RK / QCA / ARMSR 等），
+            内含多个设备，请选择你需要的设备固件。
 
             源码：${{env.WRT_REPO}}（官方源）
             分支：${{env.WRT_BRANCH}}
