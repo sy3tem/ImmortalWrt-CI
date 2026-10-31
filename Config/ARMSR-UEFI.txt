@@ -4,8 +4,9 @@
 #   p1 = FAT ESP（GRUB，BOOTAA64.EFI）+ p2 = squashfs rootfs
 # 在 fnOS（飞牛）/ KVM / Proxmox / VMware 等 UEFI 虚拟机上直接启动，不需要 U-Boot。
 # 注意：armsr 是“UEFI 虚拟机/标准 UEFI 服务器”镜像，物理 U-Boot 盒子（如 RK3528）不适用，
-#       那种设备请使用 RK 平台镜像。OpenWrt 无图形桌面，远程控制台无画面属正常，
-#       请用 SSH / Luci(网页) 管理。
+#       那种设备请使用 RK 平台镜像。OpenWrt 没有图形桌面，但虚拟机的显示控制台应当
+#       能看到内核启动日志和 login 提示（见下方“GRUB / 控制台输出”段），
+#       日常管理仍用 SSH / LuCI(网页)。
 #
 # 网口数量在首次开机时自动识别（target-patch/armsr/files/etc/uci-defaults/92-nic-autoconfig）：
 #   虚拟机 / 1 个网口 -> 单臂：所有网口桥进 br-lan，lan = DHCP 客户端，
