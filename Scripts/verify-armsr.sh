@@ -92,13 +92,25 @@ EFI="$(q '[ -d /sys/firmware/efi ] && echo yes')"
 
 PROTO="$(q 'uci get network.lan.proto')"
 PORTN="$(q 'uci get network.lan.device')"
-[ "$PROTO" = "dhcp" ] && pass "single NIC detected: lan($PORTN) proto=dhcp" || fail "expected lan dhcp on a 1-NIC guest, got '${PROTO}'"
+[ "$PROTO" = "dhcp" ] && pass "single-arm detected: lan($PORTN) proto=dhcp" || fail "expected lan dhcp on a VM guest, got '${PROTO}'"
 
 ADDR="$(q "ip -4 -o addr show dev $PORTN 2>/dev/null | awk '{print \$4}' | head -n1")"
 case "$ADDR" in
 	10.0.2.*) pass "lan address from QEMU DHCP: $ADDR" ;;
 	*) fail "lan address: ${ADDR:-<none>}" ;;
 esac
+
+# ---- 显示输出：虚拟机图形控制台必须能看到内核日志 / 登录提示 --------------
+# 这要求 (a) 内核 cmdline 有 console=tty0，(b) 内核真正开启了 VT（generic 配置
+# 默认 "# CONFIG_VT is not set"，必须由 Inject-ARMSR 显式打开），(c) /dev/tty0
+# 存在。三者缺一，虚拟机里就是一片黑屏 —— 这正是用户反馈的问题。
+CMD="$(q 'cat /proc/cmdline')"
+case "$CMD" in
+	*console=tty0*) pass "kernel cmdline has console=tty0" ;;
+	*) fail "kernel cmdline lacks console=tty0: ${CMD:-<empty>}" ;;
+esac
+q '[ -c /dev/tty0 ]' && pass "/dev/tty0 present (VT enabled)" || fail "/dev/tty0 missing (CONFIG_VT not enabled)"
+q '[ -c /dev/tty1 ]' && pass "/dev/tty1 present" || warn "/dev/tty1 missing"
 
 ROOTMB="$(q "df -m / | awk 'NR==2 {print \$2}'")"
 if [ -n "$ROOTMB" ] && [ "$ROOTMB" -ge 7000 ] 2>/dev/null; then
