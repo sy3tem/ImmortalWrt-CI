@@ -52,9 +52,23 @@ fi
 # 这里在 armsr 的 target 配置中显式开 VT + VT_CONSOLE + VT_HW_CONSOLE_BINDING，
 # 配合 Config/ARMSR-UEFI.txt 的 CONFIG_GRUB_BOOTOPTS="console=tty0"，
 # 内核日志与登录提示才能显示在虚拟显示器（fnOS/KVM/Proxmox）上。
+#
+# 关键坑：OpenWrt 的 Kernel/Configure 只把 generic + target 配置做 kconfig.pl 合并，
+# 不跑 oldconfig；随后内核自己的 syncconfig 一旦遇到“新符号”（依赖刚被打开、而
+# generic 配置里从没出现过的符号）就会进入交互式 Restart config，CI 无 tty 直接
+# Error 1。开 VT 会连带给 INPUT 子树带出新的可见符号，所以必须像 x86 的
+# config-6.18 那样，把依赖符号一并写死，做到“零新符号”。
+# （首次失败即 syncconfig 在 CONSOLE_TRANSLATIONS (NEW) 处中断。）
 KCFG="$TREE/target/linux/armsr/config-6.18"
 if [ -f "$KCFG" ]; then
-	for opt in CONFIG_VT=y CONFIG_VT_CONSOLE=y CONFIG_VT_HW_CONSOLE_BINDING=y; do
+	for opt in \
+		CONFIG_INPUT=y \
+		CONFIG_INPUT_VIVALDIFMAP=y \
+		CONFIG_VT=y \
+		CONFIG_VT_CONSOLE=y \
+		CONFIG_VT_HW_CONSOLE_BINDING=y \
+		CONFIG_CONSOLE_TRANSLATIONS=y
+	do
 		key="${opt%%=*}"
 		if grep -q "^${key}=" "$KCFG"; then
 			sed -i "s|^${key}=.*|${opt}|" "$KCFG"
@@ -64,9 +78,51 @@ if [ -f "$KCFG" ]; then
 			echo "$opt" >> "$KCFG"
 		fi
 	done
-	echo "armsr: enabled VT / VT_CONSOLE in kernel config (framebuffer console for VM display)"
+	echo "armsr: enabled VT/VT_CONSOLE + deps in kernel config (framebuffer console for VM display)"
 else
 	echo "armsr: target config-6.18 not found, skipped VT patch"
+fi
+
+# ---- 兜底：让内核配置解析不再交互 ------------------------------------------
+# OpenWrt 的 Kernel/Configure 只把 generic + target 配置做 kconfig.pl 合并，
+# 不跑 oldconfig；内核自己的 syncconfig 一旦遇到「新符号」就进入交互式
+# Restart config，CI 没有 tty，于是一句
+#   Enable character translations in console (CONSOLE_TRANSLATIONS) [Y/n/?] (NEW)
+# 之后直接 make[8]: *** syncconfig Error 1。
+# 上面的符号清单已经把 VT 需要的依赖补齐（对齐 x86 的 config-6.18），这里再加
+# 一层 olddefconfig 兜底：任何残留的新符号取默认值，并把 vermagic 按最终
+# .config 重新算一遍，保证内核与模块的 vermagic 一致。
+KDF="$TREE/include/kernel-defaults.mk"
+if [ -f "$KDF" ] && ! grep -q 'CI_OLDDEFCONFIG_NET' "$KDF"; then
+	python3 - "$KDF" <<'PY'
+import sys
+
+path = sys.argv[1]
+with open(path, encoding='utf-8') as f:
+    src = f.read()
+
+anchor = ("\tgrep '=[ym]' $(LINUX_DIR)/.config.set | LC_ALL=C sort | "
+          "$(MKHASH) md5 > $(LINUX_DIR)/.vermagic")
+
+ins = (
+    "\t# CI_OLDDEFCONFIG_NET: OpenWrt 只合并配置不跑 oldconfig，内核 syncconfig\n"
+    "\t# 遇到新符号会交互式提示（CI 无 tty -> Error 1）。olddefconfig 兜底，\n"
+    "\t# 并把 vermagic 按最终 .config 重算，避免内核/模块 vermagic 不一致。\n"
+    "\t$(KERNEL_MAKE) olddefconfig >/dev/null 2>&1 || true\n"
+    "\tgrep '=[ym]' $(LINUX_DIR)/.config | LC_ALL=C sort | "
+    "$(MKHASH) md5 > $(LINUX_DIR)/.vermagic\n"
+)
+
+if anchor in src:
+    src = src.replace(anchor, ins, 1)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(src)
+    print("armsr: kernel-defaults.mk -> olddefconfig safety net installed")
+else:
+    print("armsr: kernel-defaults.mk anchor NOT found, safety net skipped")
+PY
+else
+	echo "armsr: kernel-defaults.mk safety net already present or file missing"
 fi
 
 # ---- fix: official master armsr image Makefile still references the dropped
