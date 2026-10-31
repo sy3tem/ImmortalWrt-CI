@@ -68,13 +68,19 @@ qemu-system-aarch64 \
 	-pidfile "$WORK/qemu.pid" -daemonize || { echo "qemu failed to start"; exit 1; }
 
 echo "waiting for ssh ..."
+# 注意：不能用 nc -z 探测 —— QEMU 的 hostfwd 端口在宿主机一侧总是立刻 accept，
+# 即使 guest 的 dropbear 还没起来，nc 也会“成功”，于是老逻辑会在开机第 1 秒就
+# 判定就绪，紧接着所有命令拿到的都是空字符串（整屏 FAIL 却又看不出原因）。
+# 这里改成真跑一次 ssh，只有真正连上 guest 才算就绪。
 READY=0
-for _ in $(seq 1 300); do
-	if nc -z 127.0.0.1 2222 2>/dev/null; then READY=1; break; fi
+for _ in $(seq 1 120); do
+	if $SSH true 2>/dev/null; then READY=1; break; fi
 	sleep 5
 done
 if [ "$READY" -ne 1 ]; then
-	echo "guest never opened ssh within 1500 s"
+	echo "guest never accepted ssh within 600 s"
+	echo "---- last ssh error ----"
+	$SSH true || true
 	exit 1
 fi
 sleep 5
