@@ -10,6 +10,9 @@
 #--- target ---
 CONFIG_TARGET_x86=y
 CONFIG_TARGET_x86_64=y
+# x86/64 必须显式启用 generic 设备，否则 $(BUILD_DEVICES) 为空，image 循环不执行，
+# 不会生成任何镜像与 profiles.json（曾导致 Compile Firmware 在 profiles.json 阶段失败）。
+CONFIG_TARGET_DEVICE_x86_DEVICE_generic=y
 CONFIG_TARGET_ROOTFS_PARTSIZE=512
 # squashfs = 可一键恢复出厂（虚拟机主用镜像）；不编 ext4 rootfs，少编一套、加快构建。
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
@@ -19,6 +22,9 @@ CONFIG_TARGET_ROOTFS_INITRAMFS=n
 CONFIG_TARGET_ROOTFS_TARGZ=n
 CONFIG_TARGET_ROOTFS_CPIOGZ=n
 CONFIG_EFI_IMAGES=y
+# 显式开启 EFI 镜像（combined-efi），并直接保证 GRUB_EFI_IMAGES=y，
+# 确保生成虚拟机用的 squashfs-combined-efi.img.gz。
+CONFIG_GRUB_EFI_IMAGES=y
 
 #--- luci ---
 CONFIG_PACKAGE_luci-app-argon-config=y
