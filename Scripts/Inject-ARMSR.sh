@@ -45,6 +45,30 @@ else
 	echo "quickstart: package not present, skipped"
 fi
 
+# ---- 让虚拟机图形控制台有输出 ----------------------------------------------
+# 默认内核配置（target/linux/generic/config-6.18）里 "# CONFIG_VT is not set"，
+# 而 armsr 又设了 CONFIG_FRAMEBUFFER_CONSOLE=y —— 两者矛盾，VT 关闭时 fbcon 无法
+# 工作，内核日志和 login 只能走串口 ttyAMA0，虚拟机的图形控制台因此一片黑。
+# 这里在 armsr 的 target 配置中显式开 VT + VT_CONSOLE + VT_HW_CONSOLE_BINDING，
+# 配合 Config/ARMSR-UEFI.txt 的 CONFIG_GRUB_BOOTOPTS="console=tty0"，
+# 内核日志与登录提示才能显示在虚拟显示器（fnOS/KVM/Proxmox）上。
+KCFG="$TREE/target/linux/armsr/config-6.18"
+if [ -f "$KCFG" ]; then
+	for opt in CONFIG_VT=y CONFIG_VT_CONSOLE=y CONFIG_VT_HW_CONSOLE_BINDING=y; do
+		key="${opt%%=*}"
+		if grep -q "^${key}=" "$KCFG"; then
+			sed -i "s|^${key}=.*|${opt}|" "$KCFG"
+		elif grep -q "^# ${key} is not set" "$KCFG"; then
+			sed -i "s|^# ${key} is not set|${opt}|" "$KCFG"
+		else
+			echo "$opt" >> "$KCFG"
+		fi
+	done
+	echo "armsr: enabled VT / VT_CONSOLE in kernel config (framebuffer console for VM display)"
+else
+	echo "armsr: target config-6.18 not found, skipped VT patch"
+fi
+
 # ---- fix: official master armsr image Makefile still references the dropped
 #   kmod-thunderx-net (Cavium ThunderX NIC driver). The package no longer exists
 #   in current master (netdevices.mk), but image/Makefile forces it into
