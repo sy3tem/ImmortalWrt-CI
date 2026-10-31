@@ -12,7 +12,9 @@ CONFIG_TARGET_x86=y
 CONFIG_TARGET_x86_64=y
 # x86/64 必须显式启用 generic 设备，否则 $(BUILD_DEVICES) 为空，image 循环不执行，
 # 不会生成任何镜像与 profiles.json（曾导致 Compile Firmware 在 profiles.json 阶段失败）。
-CONFIG_TARGET_DEVICE_x86_DEVICE_generic=y
+# 符号名格式是 TARGET_<subtarget>_DEVICE_<device>，x86/64 的 subtarget 是 64，
+# 所以是 TARGET_x86_64_DEVICE_generic（不是 TARGET_DEVICE_x86_DEVICE_generic）。
+CONFIG_TARGET_x86_64_DEVICE_generic=y
 CONFIG_TARGET_ROOTFS_PARTSIZE=512
 # squashfs = 可一键恢复出厂（虚拟机主用镜像）；不编 ext4 rootfs，少编一套、加快构建。
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
@@ -21,10 +23,19 @@ CONFIG_TARGET_ROOTFS_INITRAMFS=n
 # 只保留虚拟机 / 物理机用的镜像与内核，去掉冗余 rootfs 归档。
 CONFIG_TARGET_ROOTFS_TARGZ=n
 CONFIG_TARGET_ROOTFS_CPIOGZ=n
-CONFIG_EFI_IMAGES=y
 # 显式开启 EFI 镜像（combined-efi），并直接保证 GRUB_EFI_IMAGES=y，
 # 确保生成虚拟机用的 squashfs-combined-efi.img.gz。
 CONFIG_GRUB_EFI_IMAGES=y
+
+#--- GRUB / 控制台输出 ---
+# x86 的 GRUB 会在 cmdline 里自动加 console=tty1（屏幕）和 console=ttyS0（串口），
+# 末尾是串口 → /dev/console 指向 ttyS0，::{askconsole} 把 login 只开到串口。
+# 屏幕因此只有内核日志、没有登录提示，看起来像“没画面/卡住”。
+# 解决办法：在 Scripts/Settings.sh 的 x86 分支里给 inittab 追加 tty1 登录。
+# 这里只需保证 GRUB 的 console 终端开启 + 菜单停留，方便看到启动过程。
+CONFIG_GRUB_CONSOLE=y
+# 菜单停留 3 秒，方便在控制台看到 GRUB 菜单（0 = 不等待直接启动）
+CONFIG_GRUB_TIMEOUT="3"
 
 #--- luci ---
 CONFIG_PACKAGE_luci-app-argon-config=y
