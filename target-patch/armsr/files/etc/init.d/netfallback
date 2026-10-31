@@ -7,8 +7,8 @@
 START=99
 STOP=10
 
-FALLBACK_IP=192.168.100.254
-FALLBACK_GW=192.168.100.1
+FALLBACK_IP=192.168.10.254
+FALLBACK_GW=192.168.10.1
 
 has_lease() {
 	ubus call network.interface.lan status 2>/dev/null \
