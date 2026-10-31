@@ -1,23 +1,32 @@
 #!/bin/sh
 #
-# First-boot network autoconfiguration — works with however many NICs exist.
+# First-boot network autoconfiguration.
 #
-#   1 NIC   单臂：该口就是 lan，DHCP 客户端。
-#           60 秒还没拿到地址就回落到 192.168.100.254/24（网关 192.168.100.1），
-#           见 /etc/init.d/netfallback。不启用 masq：它只是 LAN 上的一台设备，
-#           要做旁路由在 LuCI 里勾一下「强制 NAT」即可。
+# 设计原则：虚拟机（fnOS / KVM / Proxmox / VMware）里绝大多数场景是「把这台
+# OpenWrt 当作局域网里的一台设备」（桥接到主路由），而不是让它再当一层 NAT
+# 路由器。所以：
 #
-#   >=2 NIC 路由器：第一个口作 wan（DHCP + DHCPv6），其余桥接进 lan，
-#           lan = 192.168.100.1/24，开 DHCP 服务器 + RA。
+#   虚拟机 / 1 个网口 -> 单臂：所有以太网口桥接进 br-lan，lan = DHCP 客户端。
+#                        直接从主路由拿地址（与主路由同网段，可被 ping/SSH/LuCI）。
+#                        60 秒拿不到地址回落到 192.168.10.254/24，见 netfallback。
 #
-# 网口列表优先取 /etc/board.json（真机的物理口），虚拟机里没有 ports 时退回
-# /sys/class/net 里的以太网口。
+#   物理机 / >=2 网口 -> 路由器：第一个口作 wan（DHCP + DHCPv6），其余桥进 lan，
+#                        lan = 192.168.10.1/24，开 DHCP 服务器 + RA。
+#
+# 关键修复（此前 “拿到 IP 但 ping/SSH/web 全不通” 的根因）：
+#   1) 旧脚本把 network.lan.device 直接改成 eth0，但默认 config_generate 生成的
+#      br-lan bridge 仍把 eth0 当端口占用 —— eth0 同时被 bridge 和 interface 绑定，
+#      netifd 冲突，lan 起不来；60 秒后 netfallback 又改成静态 192.168.10.254，
+#      不在主路由网段，自然访问不到。现在统一「先删旧 br-lan，再按实际口重建」。
+#   2) 旧脚本在 2 网口时走 router 模式，wan 从主路由拿了地址，但防火墙 wan 区
+#      默认 REJECT 入站 —— 于是“路由器上能看到分配了 IP，却 ping/SSH/web 全不通”。
+#      现在虚拟机一律走单臂；真·路由器模式下也放行 wan 侧的管理访问。
 
 . /lib/functions.sh
 
 PORT_RE='^(eth|end|lan|wan|enp|eno|ens|enx)[0-9a-z]*$'
-FALLBACK_IP=192.168.100.254
-ROUTER_IP=192.168.100.1
+FALLBACK_IP=192.168.10.254
+ROUTER_IP=192.168.10.1
 
 list_ports() {
 	local p=""
@@ -30,44 +39,88 @@ list_ports() {
 	printf '%s\n' $p | grep -E "$PORT_RE" | sort -u
 }
 
+# 是否为虚拟机（QEMU/KVM/VMware/VirtualBox/Hyper-V/Proxmox 均在此列）
+is_vm() {
+	local v=""
+	[ -r /sys/class/dmi/id/sys_vendor ] && v="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)"
+	[ -r /sys/class/dmi/id/product_name ] && v="$v $(cat /sys/class/dmi/id/product_name 2>/dev/null)"
+	case "$v" in
+		*QEMU*|*KVM*|*VMware*|*VirtualBox*|*innotek*|*Microsoft*|*Proxmox*|*Bochs*|*Aliyun*|*Tencent*|*Huawei*)
+			return 0 ;;
+	esac
+	[ -d /sys/module/virtio_blk ] || [ -d /sys/module/virtio_pci ] || [ -d /sys/module/virtio_net ] && return 0
+	return 1
+}
+
+# 删除所有名为 br-lan 的 device 定义（默认 config_generate 生成的是匿名
+# network.@device[N]，name='br-lan'，ports 里含物理口）。
+drop_brlan() {
+	local i=0 name
+	while uci -q get "network.@device[$i]" >/dev/null 2>&1; do
+		name="$(uci -q get "network.@device[$i].name")"
+		if [ "$name" = "br-lan" ]; then
+			uci -q delete "network.@device[$i]"
+		else
+			i=$((i + 1))
+		fi
+	done
+}
+
+# 单臂：所有物理口桥进 br-lan，lan = DHCP 客户端
 set_single_arm() {
-	local dev="$1"
+	local ports="$*"
 
 	uci -q delete network.wan
 	uci -q delete network.wan6
 
+	# 先释放默认 br-lan 对物理口的占用，再按实际网口重建
+	drop_brlan
+
+	uci -q set network.brlan='device'
+	uci -q set network.brlan.name='br-lan'
+	uci -q set network.brlan.type='bridge'
+	uci -q set network.brlan.ports="$ports"
+
 	uci -q set network.lan='interface'
-	uci -q set network.lan.device="$dev"
+	uci -q set network.lan.device='br-lan'
 	uci -q set network.lan.proto='dhcp'
 	uci -q delete network.lan.ipaddr
 	uci -q delete network.lan.netmask
 	uci -q delete network.lan.gateway
 	uci -q delete network.lan.dns
 	uci -q delete network.lan.type
+	uci -q delete network.lan.ifname
 
-	# no DHCP server / RA here: this box is a client on the LAN
+	# 这里不是 DHCP 服务器：本机只是 LAN 上的一台设备
 	uci -q set dhcp.lan.ignore='1'
 	uci -q delete dhcp.lan.start
 	uci -q delete dhcp.lan.limit
 	uci -q delete dhcp.lan.leasetime
 	uci -q commit dhcp
 
-	# 不做 NAT：单臂默认是「LAN 上的一台服务器」，旁路由模式由用户在 LuCI 决定
+	# 不做 NAT（旁路由模式由用户在 LuCI 决定），并放行 lan 侧管理访问
 	lan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='lan'$/\1/p" | head -n 1)"
-	[ -n "$lan_zone" ] && uci -q set "firewall.${lan_zone}.masq='0'"
+	if [ -n "$lan_zone" ]; then
+		uci -q set "firewall.${lan_zone}.masq='0'"
+		uci -q set "firewall.${lan_zone}.input='ACCEPT'"
+		uci -q set "firewall.${lan_zone}.forward='ACCEPT'"
+		uci -q set "firewall.${lan_zone}.output='ACCEPT'"
+	fi
 
-	echo "nic-autoconfig: single NIC ($dev) -> lan dhcp, fallback $FALLBACK_IP"
+	echo "nic-autoconfig: single-arm (ports: $ports) -> br-lan dhcp, fallback $FALLBACK_IP"
 }
 
+# 路由器：第一个口 wan（DHCP），其余桥进 br-lan，lan = 192.168.10.1
 set_router() {
 	local wan="$1"
 	shift
 	local lan_ports="$*"
-	local p
 
 	uci -q delete network.lan
 	uci -q delete network.wan
 	uci -q delete network.wan6
+
+	drop_brlan
 
 	uci -q set network.wan='interface'
 	uci -q set network.wan.device="$wan"
@@ -88,8 +141,6 @@ set_router() {
 	uci -q set network.lan.netmask='255.255.255.0'
 	uci -q set network.lan.ip6assign='60'
 
-	# DHCP server on lan (config_generate defaults are fine once the
-	# interface exists again; make sure they are present)
 	uci -q set dhcp.lan.interface='lan'
 	uci -q set dhcp.lan.start='100'
 	uci -q set dhcp.lan.limit='150'
@@ -99,11 +150,16 @@ set_router() {
 	uci -q delete dhcp.lan.ignore
 	uci -q commit dhcp
 
-	# NAT on wan
 	wan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='wan'$/\1/p" | head -n 1)"
-	[ -n "$wan_zone" ] && uci -q set "firewall.${wan_zone}.masq='1'"
+	if [ -n "$wan_zone" ]; then
+		uci -q set "firewall.${wan_zone}.masq='1'"
+		# 放行 wan 侧管理访问：否则“路由器上看到分配了 IP，却 ping/SSH/web 全不通”
+		uci -q set "firewall.${wan_zone}.input='ACCEPT'"
+	fi
+	lan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='lan'$/\1/p" | head -n 1)"
+	[ -n "$lan_zone" ] && uci -q set "firewall.${lan_zone}.input='ACCEPT'"
 
-	echo "nic-autoconfig: $(( $# + 1 )) NICs -> wan=$wan lan=$lan_ports ($ROUTER_IP)"
+	echo "nic-autoconfig: router -> wan=$wan lan=$lan_ports ($ROUTER_IP)"
 }
 
 main() {
@@ -116,8 +172,13 @@ main() {
 		return 0
 	fi
 
-	if [ "$n" -eq 1 ]; then
-		set_single_arm "$ports"
+	# 虚拟机一律单臂（桥接到主路由，拿主路由地址）；物理机 1 口也单臂，
+	# 物理机 >=2 口才做 router。这样 VM 里无论 fnOS 给几个虚拟网卡都可达。
+	if is_vm; then
+		echo "nic-autoconfig: virtual machine detected -> single-arm mode"
+		set_single_arm $ports
+	elif [ "$n" -eq 1 ]; then
+		set_single_arm $ports
 	else
 		set_router $ports
 	fi
