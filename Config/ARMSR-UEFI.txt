@@ -1,8 +1,11 @@
 # armsr/armv8 — UEFI（edk2 / AAVMF）虚拟机镜像
 #
 # 目标：ImmortalWrt 官方 armsr/armv8 (Generic EFI Boot)，产物是标准 GPT 磁盘：
-#   p1 = FAT ESP（GRUB，BOOTAA64.EFI）+ p2 = ext4 rootfs
-# 在 fnOS（飞牛）虚拟机上用 UEFI 固件 + virtio 磁盘/网卡直接启动，不需要 U-Boot。
+#   p1 = FAT ESP（GRUB，BOOTAA64.EFI）+ p2 = squashfs rootfs
+# 在 fnOS（飞牛）/ KVM / Proxmox / VMware 等 UEFI 虚拟机上直接启动，不需要 U-Boot。
+# 注意：armsr 是“UEFI 虚拟机/标准 UEFI 服务器”镜像，物理 U-Boot 盒子（如 RK3528）不适用，
+#       那种设备请使用 RK 平台镜像。OpenWrt 无图形桌面，远程控制台无画面属正常，
+#       请用 SSH / Luci(网页) 管理。
 #
 # 网口数量在首次开机时自动识别（target-patch/armsr/files/etc/uci-defaults/92-nic-autoconfig）：
 #   1 个网口  -> 单臂：该口作 lan，DHCP 客户端；60 秒拿不到地址则回落到
@@ -20,9 +23,13 @@ CONFIG_TARGET_DEVICE_armsr_armv8_DEVICE_generic=y
 # rootfs 分区 512 MiB（armsr 平台默认仅 160 MiB）。squashfs 压缩后远小于此，
 # 但 docker 等大量包体积可观，留足余量；虚拟机首启 growroot 会再扩到整块磁盘。
 CONFIG_TARGET_ROOTFS_PARTSIZE=512
-# squashfs = 可一键恢复出厂（虚拟机主用镜像）；不再编 ext4 rootfs ——
-# 既少编一套 rootfs、加快构建，也彻底规避此前 “ext4 空间不足” 的故障。
+# 主用 squashfs（可一键恢复出厂，虚拟机主用镜像）。
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
+# 显式关闭 ext4 rootfs：armsr target 默认 CONFIG_TARGET_ROOTFS_EXT4FS=y，
+# 仅靠删除上一行无法关掉，必须显式 =n，否则仍会生成 ext4-combined-efi（多编一套、还大）。
+CONFIG_TARGET_ROOTFS_EXT4FS=n
+# 生成 qcow2（虚拟化导入最友好；CI 的 UEFI 启动测试优先验证 squashfs-combined-efi.qcow2）。
+CONFIG_QCOW2_IMAGES=y
 CONFIG_TARGET_IMAGES_GZIP=y
 CONFIG_TARGET_ROOTFS_INITRAMFS=n
 
