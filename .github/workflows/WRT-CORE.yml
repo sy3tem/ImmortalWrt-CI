@@ -262,6 +262,27 @@ jobs:
             find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
 
+            # ---- 附件分类 + 配对重命名 -------------------------------------------
+            # GitHub Release 附件按文件名排序、无法自定义分组，这里用前缀把三类在
+            # 列表里天然分开，并让同一设备的“配置”与“固件”文件名紧邻：
+            #   nowifi_ 不带 WiFi 设备 | vm_ 虚拟机(armsr / x86) | wifi_ 带 WiFi 设备
+            #   每设备：<CAT>_<CONFIG>_config.txt 紧挨 <CAT>_<CONFIG>_immortalwrt-...
+            # 同时永不发布 u-boot（刷机用出厂 bootloader 即可，release 不需要）。
+            case "${WRT_CONFIG^^}" in
+              *NOWIFI*) CAT="nowifi" ;;
+              *ARMSR*|*X86*) CAT="vm" ;;
+              *) CAT="wifi" ;;
+            esac
+            cd ./upload
+            for c in Config-*.txt; do
+              [ -f "$c" ] && mv -f "$c" "${CAT}_${WRT_CONFIG}_config.txt"
+            done
+            for f in $(ls | grep -v "^${CAT}_${WRT_CONFIG}_" | grep -v "u-boot"); do
+              [ -f "$f" ] && mv -f "$f" "${CAT}_${WRT_CONFIG}_${f}"
+            done
+            rm -f ./*u-boot*
+            cd ..
+
             # --- armsr / UEFI VM (fnOS, KVM): 8 GiB sparse qcow2 ---------------
             # 出厂 qcow2 只有 ~64 MiB 虚拟容量，导入虚拟机后放不下 docker 镜像。
             # 先把虚拟容量抬到 8 GiB，growroot 首启会把 p2 和 ext4 扩满整块盘。
@@ -331,4 +352,9 @@ jobs:
 
             提示：固件文件名与 ImmortalWrt 官方发布保持一致
             （immortalwrt-<平台>-<子目标>-<设备>-squashfs-sysupgrade.*）。
-            带/不带 WiFi 的差异见本 Release 的标签名称。
+
+            附件按类别前缀分组（GitHub 按文件名排序，三类天然分开）：
+              nowifi_ 不带 WiFi 的设备
+              vm_     虚拟机镜像（armsr / x86，UEFI 启动，可直接导入 KVM / fnOS / VMware / Proxmox）
+              wifi_   带 WiFi 的设备
+            每个设备 “<CAT>_<CONFIG>_config.txt” 紧邻其固件，方便一一对应下载。
