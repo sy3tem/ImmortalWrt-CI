@@ -49,8 +49,11 @@ jobs:
       WRT_WORD: '12345678'
       WRT_IP: 192.168.100.1
       WRT_PW: password
-      WRT_REPO: https://github.com/${{inputs.SOURCE}}.git
-      WRT_BRANCH: ${{inputs.BRANCH}}
-      WRT_SOURCE: ${{inputs.SOURCE}}
+      # 源/分支写死为官方 master：本 workflow 同时由 workflow_run(Auto-Clean) 触发，
+      # 该事件不会携带 workflow_dispatch 的 inputs，若用 ${{inputs.SOURCE}} 会为空，
+      # 导致 WRT_REPO 变成 https://github.com/.git 而 clone 失败。
+      WRT_REPO: https://github.com/immortalwrt/immortalwrt.git
+      WRT_BRANCH: master
+      WRT_SOURCE: immortalwrt/immortalwrt
       WRT_PACKAGE: ${{inputs.PACKAGE}}
       WRT_TEST: ${{inputs.TEST}}
