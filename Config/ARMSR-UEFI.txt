@@ -8,9 +8,10 @@
 #       请用 SSH / Luci(网页) 管理。
 #
 # 网口数量在首次开机时自动识别（target-patch/armsr/files/etc/uci-defaults/92-nic-autoconfig）：
-#   1 个网口  -> 单臂：该口作 lan，DHCP 客户端；60 秒拿不到地址则回落到
-#               192.168.100.254/24（网关 192.168.100.1）
-#   >=2 网口 -> 路由器：第一个口作 wan（DHCP/DHCPv6），其余桥接进 lan（192.168.100.1）
+#   虚拟机 / 1 个网口 -> 单臂：所有网口桥进 br-lan，lan = DHCP 客户端，
+#                        直接从主路由拿地址（与主路由同网段，可被 ping / SSH / LuCI）。
+#                        60 秒拿不到地址则回落到 192.168.10.254/24（网关 192.168.10.1）
+#   >=2 网口（物理机） -> 路由器：第一个口作 wan（DHCP/DHCPv6），其余桥接进 lan（192.168.10.1）
 #
 # rootfs 首启自动扩到整块虚拟磁盘（growroot），docker 数据在 /opt/docker。
 
@@ -29,9 +30,22 @@ CONFIG_TARGET_ROOTFS_SQUASHFS=y
 # 仅靠删除上一行无法关掉，必须显式 =n，否则仍会生成 ext4-combined-efi（多编一套、还大）。
 CONFIG_TARGET_ROOTFS_EXT4FS=n
 # 生成 qcow2（虚拟化导入最友好；CI 的 UEFI 启动测试优先验证 squashfs-combined-efi.qcow2）。
+# 注意：这要求构建机上有 qemu-img（CI 已在依赖清单里装 qemu-utils）。
 CONFIG_QCOW2_IMAGES=y
 CONFIG_TARGET_IMAGES_GZIP=y
 CONFIG_TARGET_ROOTFS_INITRAMFS=n
+
+#--- GRUB / 控制台输出（修复“虚拟机里黑屏、看不到任何画面”）---
+# armsr 官方内核 cmdline 默认只有 earlycon，日志和 login 全走串口，虚拟机的
+# 图形控制台因此一片黑——这不是启动失败，是没输出到屏幕。
+# 这里显式给两个控制台：串口 ttyAMA0 继续收内核日志（便于排障），
+# 最后一个是 tty0 —— 内核会把 /dev/console 定为它，inittab 的 ::askconsole:
+# 于是把 login 提示开到虚拟显示器上。
+# 前提：内核必须开启 VT（generic 配置默认关闭，Inject-ARMSR.sh 已显式打开）。
+CONFIG_GRUB_CONSOLE=y
+CONFIG_GRUB_BOOTOPTS="console=ttyAMA0,115200 console=tty0"
+# 菜单停留 3 秒，方便在控制台看到 GRUB 菜单（0 = 不等待直接启动）
+CONFIG_GRUB_TIMEOUT="3"
 
 #--- luci ---
 CONFIG_PACKAGE_luci-app-argon-config=y
