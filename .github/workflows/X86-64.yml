@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MIT
+# x86/64 — 通用 UEFI 虚拟机 / 物理机镜像
+#
+# 目标平台：KVM / VMware / Proxmox / 飞牛虚拟机 / 物理 x86 小主机（UEFI 启动）
+# 产物：immortalwrt-x86-64-generic-squashfs-combined-efi.img.gz
+# 与 armsr 同属“虚拟机(vm_)”类别，按天与 RK / QCA 合并进同一个 Release。
+# 网口首启自动识别：1 口 = 单臂(DHCP + 回落)，>=2 口 = wan+lan 路由器。
+
+name: X86-64
+
+on:
+  workflow_run:
+    workflows: ["Auto-Clean"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      SOURCE:
+        default: 'immortalwrt/immortalwrt'
+        required: true
+        type: choice
+        options:
+          - immortalwrt/immortalwrt
+      BRANCH:
+        default: 'master'
+        required: true
+        type: string
+      PACKAGE:
+        description: '临时追加插件（.config 行，换行分隔）'
+        required: false
+        type: string
+      TEST:
+        description: '仅输出配置文件，不编译固件。'
+        default: 'false'
+        required: true
+        type: boolean
+
+permissions: write-all
+
+jobs:
+  x86:
+    name: X86-64
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_CONFIG: X86-64
+      WRT_THEME: argon
+      WRT_NAME: ImmortalWrt
+      WRT_SSID: ImmortalWrt
+      WRT_WORD: '12345678'
+      WRT_IP: 192.168.100.1
+      WRT_PW: password
+      WRT_REPO: https://github.com/${{inputs.SOURCE}}.git
+      WRT_BRANCH: ${{inputs.BRANCH}}
+      WRT_SOURCE: ${{inputs.SOURCE}}
+      WRT_PACKAGE: ${{inputs.PACKAGE}}
+      WRT_TEST: ${{inputs.TEST}}
