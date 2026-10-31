@@ -12,9 +12,13 @@ CONFIG_TARGET_x86=y
 CONFIG_TARGET_x86_64=y
 # x86/64 必须显式启用 generic 设备，否则 $(BUILD_DEVICES) 为空，image 循环不执行，
 # 不会生成任何镜像与 profiles.json（曾导致 Compile Firmware 在 profiles.json 阶段失败）。
-# 符号名格式是 TARGET_<subtarget>_DEVICE_<device>，x86/64 的 subtarget 是 64，
-# 所以是 TARGET_x86_64_DEVICE_generic（不是 TARGET_DEVICE_x86_DEVICE_generic）。
-CONFIG_TARGET_x86_64_DEVICE_generic=y
+# 符号名由 scripts/target-metadata.pl 生成，格式是
+#   TARGET_DEVICE_<target>_<subtarget>_DEVICE_<device-id>
+# 且设备的默认值是 n（metadata.pm: $profile->{default} = "n"），所以必须写全、
+# 写对才有效：x86/64 的 <target>_<subtarget> 是 x86_64，device-id 是 DEVICE_generic，
+# 合起来就是 TARGET_DEVICE_x86_64_DEVICE_generic（对照 armsr 的
+# CONFIG_TARGET_DEVICE_armsr_armv8_DEVICE_generic=y）。
+CONFIG_TARGET_DEVICE_x86_64_DEVICE_generic=y
 CONFIG_TARGET_ROOTFS_PARTSIZE=512
 # squashfs = 可一键恢复出厂（虚拟机主用镜像）；不编 ext4 rootfs，少编一套、加快构建。
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
