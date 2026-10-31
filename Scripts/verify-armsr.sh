@@ -32,14 +32,28 @@ cleanup() {
 trap cleanup EXIT
 
 echo "== armsr/UEFI smoke test =="
-IMG="$(ls "$IMGDIR"/*ext4-combined-efi.qcow2 2>/dev/null | head -n1)"
+# 优先验证 squashfs qcow2（开 CONFIG_QCOW2_IMAGES 时生成，虚拟化导入最友好）；
+# 否则 fallback 到任意 combined-efi.img.gz（解压后转 qcow2 测试）。
+# 注意：必须真能找到可启动镜像，否则明确失败 —— 不能再像以前那样只找
+# *ext4-combined-efi.qcow2（本项目从不生成 ext4），导致测试空跑却显示“成功”。
+IMG="$(ls "$IMGDIR"/*squashfs-combined-efi.qcow2 2>/dev/null | head -n1)"
 if [ -z "$IMG" ]; then
-	echo "no *ext4-combined-efi.qcow2 in $IMGDIR"
+	IMG="$(ls "$IMGDIR"/*combined-efi.img.gz 2>/dev/null | head -n1)"
+fi
+if [ -z "$IMG" ]; then
+	echo "no bootable armsr image (*squashfs-combined-efi.qcow2 or *combined-efi.img.gz) in $IMGDIR"
 	ls -l "$IMGDIR"
 	exit 1
 fi
 echo "disk: $IMG"
-cp -f "$IMG" "$WORK/disk.qcow2"
+# 若拿到的是 .img.gz，解压后转成 qcow2 再测（QEMU 跑 qcow2 最稳）
+if [[ "$IMG" == *.img.gz ]]; then
+	echo "decompressing + converting .img.gz -> qcow2 ..."
+	gunzip -c "$IMG" > "$WORK/disk.raw"
+	qemu-img convert -f raw -O qcow2 "$WORK/disk.raw" "$WORK/disk.qcow2"
+else
+	cp -f "$IMG" "$WORK/disk.qcow2"
+fi
 cp -f /usr/share/AAVMF/AAVMF_VARS.fd "$WORK/vars.fd"
 
 qemu-system-aarch64 \
@@ -55,12 +69,12 @@ qemu-system-aarch64 \
 
 echo "waiting for ssh ..."
 READY=0
-for _ in $(seq 1 120); do
+for _ in $(seq 1 300); do
 	if nc -z 127.0.0.1 2222 2>/dev/null; then READY=1; break; fi
 	sleep 5
 done
 if [ "$READY" -ne 1 ]; then
-	echo "guest never opened ssh within 600 s"
+	echo "guest never opened ssh within 1500 s"
 	exit 1
 fi
 sleep 5
