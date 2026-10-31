@@ -300,11 +300,11 @@ jobs:
           fi
 
       - name: UEFI Boot Smoke Test (armsr)
-        # Boot the built qcow2 with real edk2/AAVMF firmware under QEMU and check
-        # that the guest comes up as expected (UEFI, NIC autodetect, growroot,
-        # LuCI, rtp2httpd, quickstart). Only for the armsr/UEFI platform.
-        # Non-blocking: a TCG-slow guest must not throw away the whole compile.
-        continue-on-error: true
+        # 真启动验证：用真实 edk2/AAVMF UEFI 固件在 QEMU 里把刚编出的 armsr 镜像
+        # 跑起来，校验 UEFI 启动 / 网卡自识别 / growroot / LuCI / 关键包都在。
+        # 仅 armsr/UEFI 平台执行。
+        # 现在这是【硬门禁】：镜像若真启不动，直接让本步失败，阻断 Release 发布 ——
+        # 绝不能再像以前那样 continue-on-error 让“假成功”悄悄放行坏镜像。
         if: env.WRT_TEST != 'true' && contains(env.WRT_TARGET, 'armsr')
         run: |
           sudo apt-get -y install qemu-system-arm qemu-efi-aarch64 sshpass netcat-openbsd
