@@ -96,7 +96,15 @@ fi
 # 现在从官方 alpha 通道取 aarch64 ipk（sha256 锁定），把二进制、init 脚本、
 # 配置和前端 bundle 一起铺进 rootfs；配合上面的 proxy_prefix，网络向导才真正
 # 能保存。详见 Scripts/Quickstart.sh 顶部的说明。
-bash "$GITHUB_WORKSPACE/Scripts/Quickstart.sh"
+# 必须显式判断：本脚本是 set -e，一旦这里失败，后面的内核选项修正、上游
+# kmod-thunderx-net 清理、镜像裁剪都不会执行，构建会一路跑到 install 阶段才
+# 以 "kmod-thunderx-net (no such package)" 这种完全不相干的形式报错，很难定位。
+# 所以这里直接快速失败，把真实原因留在 Custom Settings 步骤里。
+if ! bash "$GITHUB_WORKSPACE/Scripts/Quickstart.sh"; then
+	echo "ERROR: quickstart integration failed — aborting here so the build does not" >&2
+	echo "       continue with a half-patched tree (see the message above)." >&2
+	exit 1
+fi
 
 # ---- 让虚拟机图形控制台有输出 ----------------------------------------------
 # 默认内核配置（target/linux/generic/config-6.18）里 "# CONFIG_VT is not set"，

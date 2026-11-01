@@ -45,47 +45,67 @@ QS_SHA="e45612baeec5e0cc6c1ffc5fc737460d4f53d446595124577ae30bdf5910a745"
 UI_PKG="luci-app-quickstart_0.17.0-test20261022-r1_all.ipk"
 UI_SHA="d6ef4d0c9a77c9f562e1ff4682f07fda225f7516ae44bacc93f1e1f04ceaf209"
 
+# 结果通过全局变量 FETCH_OUT 返回，不用 $(...) —— 函数里的提示信息一旦写进
+# stdout，就会被命令替换一起捕获，返回值变成 "提示\n路径"，后面的 tar 拿着这
+# 串东西当文件名，报 "tar (child): ...: Cannot open: No such file or directory"。
+# （曾经因为这个把整次构建拖到 install 阶段才失败。）
+FETCH_OUT=""
 fetch() {
 	local name="$1" sha="$2" out got
 	out="$CACHE/$name"
+	FETCH_OUT=""
 
 	if [ ! -s "$out" ] || [ "$(sha256sum "$out" | cut -d' ' -f1)" != "$sha" ]; then
-		echo "quickstart: downloading $name"
-		curl -fsSL --retry 3 --connect-timeout 20 -o "$out" "$QS_BASE/$name"
+		printf 'quickstart: downloading %s\n' "$name" >&2
+		if ! curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 20 -o "$out" "$QS_BASE/$name"; then
+			printf 'ERROR: download failed: %s/%s\n' "$QS_BASE" "$name" >&2
+			exit 1
+		fi
 	fi
 
 	got="$(sha256sum "$out" | cut -d' ' -f1)"
 	if [ "$got" != "$sha" ]; then
-		echo "ERROR: sha256 mismatch for $name"
-		echo "  want $sha"
-		echo "  got  $got"
+		printf 'ERROR: sha256 mismatch for %s\n  want %s\n  got  %s\n' "$name" "$sha" "$got" >&2
 		exit 1
 	fi
-	printf '%s' "$out"
+	FETCH_OUT="$out"
 }
 
 unpack() {
 	local ipk="$1" tmp="$CACHE/unpack"
 
+	if [ ! -s "$ipk" ]; then
+		echo "ERROR: ipk not found: $ipk" >&2
+		exit 1
+	fi
+
 	rm -rf "$tmp"
 	mkdir -p "$tmp"
 
 	# ipk 外层本身是 tar.gz（deb 风格三层），先取 data.tar.gz
-	tar xzf "$ipk" -C "$tmp"
+	if ! tar xzf "$ipk" -C "$tmp"; then
+		echo "ERROR: cannot unpack ipk: $ipk" >&2
+		exit 1
+	fi
 	if [ ! -f "$tmp/data.tar.gz" ]; then
-		echo "ERROR: $ipk has no data.tar.gz"
+		echo "ERROR: $ipk has no data.tar.gz" >&2
 		exit 1
 	fi
 
-	tar xzf "$tmp/data.tar.gz" -C "$DEST"
+	if ! tar xzf "$tmp/data.tar.gz" -C "$DEST"; then
+		echo "ERROR: cannot extract data.tar.gz of $ipk" >&2
+		exit 1
+	fi
 }
 
 mkdir -p "$CACHE" "$DEST"
 
 echo "===== quickstart daemon + official LuCI frontend ====="
 
-QS_IPK="$(fetch "$QS_PKG" "$QS_SHA")"
-UI_IPK="$(fetch "$UI_PKG" "$UI_SHA")"
+fetch "$QS_PKG" "$QS_SHA"
+QS_IPK="$FETCH_OUT"
+fetch "$UI_PKG" "$UI_SHA"
+UI_IPK="$FETCH_OUT"
 
 unpack "$QS_IPK"
 unpack "$UI_IPK"
