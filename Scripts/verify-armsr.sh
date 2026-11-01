@@ -183,16 +183,33 @@ esac
 q 'command -v rtp2httpd >/dev/null' && pass "rtp2httpd installed" || fail "rtp2httpd missing"
 
 q '[ -f /www/luci-static/quickstart/index.js ]' && pass "quickstart assets installed" || fail "quickstart assets missing"
-q 'grep -q "if true then" /usr/lib/lua/luci/controller/quickstart.lua' \
-	&& pass "quickstart daemon gate patched out" \
-	|| fail "quickstart controller still gated on the iStoreOS daemon"
 
-# 网络向导/无线向导/接口配置 三页的保存接口在 quickstart Go 守护进程里，
-# 本固件没有该守护进程，菜单已摘除；再验一次，避免上游改代码后复活
-if q 'grep -q "entry.*networkguide_index" /usr/lib/lua/luci/controller/quickstart.lua'; then
-	fail "NetworkGuide menu still registered (save would 500 connect failed)"
+# 守护进程是否真的在跑：前端的引导/保存/状态卡片全看它
+q 'pgrep -f "/usr/sbin/quickstart serve" >/dev/null' \
+	&& pass "quickstart daemon running" \
+	|| fail "quickstart daemon not running"
+
+# uhttpd 前缀代理是否写进配置（iStoreOS 的 -F prefix=url 补丁）
+q 'uci -q show uhttpd.main.proxy_prefix | grep -q "/guide="' \
+	&& pass "uhttpd proxy_prefix /guide -> 127.0.0.1:3038" \
+	|| fail "uhttpd proxy_prefix /guide missing"
+
+# 端到端：从宿主机直接打向导接口。GET 打到 POST-only 的接口，只要不是 5xx /
+# 000 就证明请求确实到了 Go 后端 —— 移植前这里正好是 "500 connect failed"。
+READY=0
+CODE=""
+for _ in $(seq 1 30); do
+	CODE="$(curl -s -o /dev/null -m 5 -w '%{http_code}' \
+		"http://127.0.0.1:${PORT_HTTP}/guide/gateway-router/" 2>/dev/null)"
+	case "$CODE" in
+		5*|000|"") sleep 2 ;;
+		*) READY=1; break ;;
+	esac
+done
+if [ "$READY" -eq 1 ]; then
+	pass "quickstart API proxied end-to-end (HTTP $CODE)"
 else
-	pass "daemon-backed NetworkGuide menu removed"
+	fail "quickstart API still failing (HTTP ${CODE:-000}) — daemon or proxy broken"
 fi
 
 q '[ -x /usr/sbin/bypass-router ]' \
