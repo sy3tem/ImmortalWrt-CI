@@ -34,45 +34,69 @@ chmod 0755 "$DEST/usr/sbin/bypass-router" 2>/dev/null || true
 echo "overlay installed into package/base-files/files:"
 ( cd "$SRC" && find . -type f | sort | sed 's/^/   /' )
 
-# ---- quickstart: let the dashboard render without the iStoreOS daemon ------
-QS="$TREE/package/luci-app-quickstart/luasrc/controller/quickstart.lua"
-if [ -f "$QS" ]; then
-	sed -i 's/if luci\.sys\.call("pgrep quickstart [^"]*") == 0 then/if true then/' "$QS"
-	# the daemon-backed auto_setup/taskd endpoints stay dormant without taskd;
-	# guard them so a missing /etc/init.d/tasks cannot break the page
-	# 替换后必须是 cmd = "true "，不能带 ".." —— 原句形如
-	#   cmd = "/etc/init.d/tasks task_add auto_setup " .. luci.util.shellquote(cmd)
-	# 这里只替换左边的字符串字面量，右边的 ".." 要原样保留。以前写成
-	#   ...|cmd = "true " ..|  会留下两个相邻的连接符：
-	#   cmd = "true " .. .. luci.util.shellquote(cmd)
-	# Lua 解析失败：quickstart.lua:136: unexpected symbol near '..'，进而让
-	# LuCI 整个打不开（HTTP 500 Unhandled exception during request dispatching）。
-	sed -i 's|cmd = "/etc/init.d/tasks task_add auto_setup "|cmd = "true "|' "$QS" 2>/dev/null || true
+# ---- uhttpd: proxy_prefix（把 /guide /u /nas 等前缀转发给守护进程） --------
+# quickstart 守护进程只监听 127.0.0.1:3038，而前端的 fetch 是相对根路径
+# （/guide/gateway-router/、/u/network/status/ …），必须由 80 端口上的 uhttpd
+# 按前缀反代过去。上游 uhttpd 没有这个能力，iStoreOS 是自己 fork 加了 -F。
+# 这里把它的三个补丁原样打上：
+#   501-1 feat: add raw proxy            新增 proxy_prefix.c，支持 -F prefix=url
+#   501-2 fix: force backend close       代理完成后强制关后端连接
+#   501-3 feat: forward original headers 把 Cookie / X-Forwarded-* 透传给后端
+# 补丁基于 uhttpd 2026-08-24，对 ImmortalWrt 的 2026-10-19 只有行偏移、无冲突。
+UH="$TREE/package/network/services/uhttpd"
+if [ -d "$UH" ]; then
+	mkdir -p "$UH/patches"
+	cp "$GITHUB_WORKSPACE"/target-patch/uhttpd/patches/*.patch "$UH/patches/"
 
-	# ---- 摘掉「网络向导 / 无线向导 / 接口配置」入口 -----------------------
-	# 这些页面是 iStoreOS 的 Vue 前端，数据全靠 quickstart Go 守护进程：
-	#   保存旁路由  POST /guide/gateway-router/
-	#   读取网口    GET  /network/port/list/
-	#   读取状态    GET  /u/network/status/
-	# 本固件没有编入该守护进程（它不在任何 feed 里，闭源、无 aarch64 发布），
-	# 这些路径没有任何程序监听，uhttpd 直接回 500 connect failed —— 表现就是
-	# 用户填完静态 IP 点「保存配置」报「网络异常：500 connect failed」。
-	# 前端代码是压缩后的 bundle，没法改成走 ubus，所以直接不注册这些菜单项，
-	# 免得用户点进去踩坑。旁路由请用 /usr/sbin/bypass-router（见下）或原生
-	# 的「网络 → 接口」页面。
-	#
-	# 只删 entry 行，不动 networkguide_index()/quickwifi_index() 函数体：
-	# 函数名是 networkguide_index（无下划线），build_url 里才有 "network_guide"，
-	# 用 /network_guide/d 会把 redirect 函数体删空导致 Lua 语法错误。
-	sed -i '/call("networkguide_index")/d' "$QS"
-	sed -i '/entry(.*"network_guide", "pages"/d' "$QS"
-	sed -i '/call("quickwifi_index")/d' "$QS"
-	sed -i '/entry(.*"quickwifi", "pages"/d' "$QS"
-	sed -i '/entry(.*"interfaceconfig"/d' "$QS"
-	echo "quickstart: daemon gate removed, daemon-backed menus unregistered"
+	if ! grep -q 'append_proxy_prefix' "$UH/files/uhttpd.init"; then
+		python3 - "$UH/files/uhttpd.init" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+
+func = '''append_proxy_prefix() {
+\tlocal v="$1"
+\tlocal prefix="${v%%=*}"
+\tlocal handler="${v#*=}"
+
+\tif [ "$prefix" != "$handler" ] && [ -n "$prefix" ] && [ -n "$handler" ]; then
+\t\tprocd_append_param command -F "$prefix=$handler"
+\telse
+\t\techo "Skipping invalid proxy prefix \\"$v\\"" >&2
+\tfi
+}
+
+'''
+
+anchor = 'start_instance()\n{'
+if anchor not in src:
+    sys.exit('uhttpd.init: start_instance anchor not found')
+src = src.replace(anchor, func + anchor, 1)
+
+call = '\t\tconfig_list_foreach "$cfg" ucode_prefix append_ucode_prefix\n\t}\n'
+if call not in src:
+    sys.exit('uhttpd.init: ucode_prefix anchor not found')
+src = src.replace(
+    call,
+    call + '\tconfig_list_foreach "$cfg" proxy_prefix append_proxy_prefix\n',
+    1,
+)
+
+open(path, 'w', encoding='utf-8').write(src)
+PY
+		echo "uhttpd: proxy_prefix patch injected (3 patches + init hook)"
+	fi
 else
-	echo "quickstart: package not present, skipped"
+	echo "uhttpd package not found, skipped proxy patches"
 fi
+
+# ---- quickstart: iStoreOS 守护进程 + 官方前端（完整移植） -----------------
+# 以前只装前端、没有守护进程，所有 /guide /u /nas 接口都回 500 connect failed。
+# 现在从官方 alpha 通道取 aarch64 ipk（sha256 锁定），把二进制、init 脚本、
+# 配置和前端 bundle 一起铺进 rootfs；配合上面的 proxy_prefix，网络向导才真正
+# 能保存。详见 Scripts/Quickstart.sh 顶部的说明。
+bash "$GITHUB_WORKSPACE/Scripts/Quickstart.sh"
 
 # ---- 让虚拟机图形控制台有输出 ----------------------------------------------
 # 默认内核配置（target/linux/generic/config-6.18）里 "# CONFIG_VT is not set"，

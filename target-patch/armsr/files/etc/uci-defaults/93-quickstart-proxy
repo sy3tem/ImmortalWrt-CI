@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# 把 quickstart 守护进程挂到 uhttpd 上，并启用服务。
+#
+# 守护进程（/usr/sbin/quickstart serve）监听 127.0.0.1:3038，而浏览器访问的是
+# 80 端口的 uhttpd。前端 bundle 里所有请求都是相对根路径（fetch("/guide/…")），
+# 所以必须让 uhttpd 按前缀反代到 3038 —— 这就是 iStoreOS 给 uhttpd 加的
+# proxy_prefix（命令行 -F prefix=url）能力，补丁见 Scripts/Inject-ARMSR.sh。
+#
+# 前缀清单来自 0.17.0 前端 bundle 里所有 fetch("/xxx/…") 的首段：
+#   guide lanctrl u nas raid network system smart share wireless
+# 注意 /cgi-bin 和 /luci-static 是 LuCI 自己的，绝对不能加进来（会把后台
+# 整个劫持到守护进程，LuCI 直接打不开）。
+#
+# 少加一个前缀的症状是「某个页面单独报 404/500」，所以这里一次性写全。
+
+uci -q get uhttpd.main >/dev/null || exit 0
+
+add_prefix() {
+	local p="$1"
+	uci -q show uhttpd.main.proxy_prefix 2>/dev/null | grep -qF "'$p=" || \
+		uci -q add_list "uhttpd.main.proxy_prefix=$p=http://127.0.0.1:3038"
+}
+
+for p in /guide /u /nas /lanctrl /raid /network /system /smart /share /wireless; do
+	add_prefix "$p"
+done
+uci -q commit uhttpd
+
+# 守护进程的 init 脚本由官方 ipk 提供（START=92）。首次启动时 uci-defaults
+# 已经执行完、rc.d 还没生成，这里手动 enable 一次，重启后由 procd 拉起。
+/etc/init.d/quickstart enable 2>/dev/null
+/etc/init.d/quickstart start 2>/dev/null
+
+# uhttpd 在 boot 早期就起来了，那时 proxy_prefix 还没写进配置，需要重载一次
+/etc/init.d/uhttpd restart 2>/dev/null
+
+# quickstart 的 controller 用 `pgrep quickstart` 做门槛：LuCI 索引如果在守护
+# 进程启动前已经生成，菜单里就不会出现「网络向导」。清掉缓存让它重建。
+rm -f /tmp/luci-indexcache /tmp/luci-indexcache.*
+
+exit 0
