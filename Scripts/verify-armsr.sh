@@ -15,7 +15,11 @@ set -uo pipefail
 
 IMGDIR="${1:-./upload}"
 WORK="$(mktemp -d)"
-SSH="sshpass -p password ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR -p 2222 root@127.0.0.1"
+SSHCMD="sshpass -p password ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
+# guest 实际落到哪个地址要探测后才知道（见下方 netdev 注释），先留空
+PORT_SSH=""
+PORT_HTTP=""
+SSH=""
 FAIL=0
 WARN=0
 
@@ -61,7 +65,9 @@ qemu-system-aarch64 \
 	-drive if=pflash,format=raw,readonly=on,file=/usr/share/AAVMF/AAVMF_CODE.fd \
 	-drive if=pflash,format=raw,file="$WORK/vars.fd" \
 	-drive if=virtio,format=qcow2,file="$WORK/disk.qcow2" \
-	-netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22,hostfwd=tcp:127.0.0.1:8080-:80 \
+	-netdev user,id=n0,net=192.168.10.0/24,host=192.168.10.2,dhcpstart=192.168.10.100,\
+hostfwd=tcp:127.0.0.1:2222-192.168.10.254:22,hostfwd=tcp:127.0.0.1:2223-192.168.10.100:22,\
+hostfwd=tcp:127.0.0.1:8080-192.168.10.254:80,hostfwd=tcp:127.0.0.1:8081-192.168.10.100:80 \
 	-device virtio-net-pci,netdev=n0 \
 	-device virtio-rng-pci \
 	-display none -serial "file:$WORK/serial.log" \
@@ -72,17 +78,34 @@ echo "waiting for ssh ..."
 # 即使 guest 的 dropbear 还没起来，nc 也会“成功”，于是老逻辑会在开机第 1 秒就
 # 判定就绪，紧接着所有命令拿到的都是空字符串（整屏 FAIL 却又看不出原因）。
 # 这里改成真跑一次 ssh，只有真正连上 guest 才算就绪。
+#
+# guest 的地址取决于它有没有拿到 DHCP lease，所以要对两个候选都试：
+#   2222 -> 192.168.10.254  (netfallback 的静态回落地址，QEMU 里通常就是这个)
+#   2223 -> 192.168.10.100  (真的从 QEMU DHCP 拿到地址时的 dhcpstart)
 READY=0
 for _ in $(seq 1 120); do
-	if $SSH true 2>/dev/null; then READY=1; break; fi
+	for cand in 2222 2223; do
+		if $SSHCMD -p "$cand" root@127.0.0.1 true 2>/dev/null; then
+			PORT_SSH="$cand"; READY=1; break
+		fi
+	done
+	[ "$READY" -eq 1 ] && break
 	sleep 5
 done
 if [ "$READY" -ne 1 ]; then
 	echo "guest never accepted ssh within 600 s"
 	echo "---- last ssh error ----"
-	$SSH true || true
+	for cand in 2222 2223; do
+		echo "[port $cand]"; $SSHCMD -p "$cand" root@127.0.0.1 true || true
+	done
 	exit 1
 fi
+case "$PORT_SSH" in
+	2222) PORT_HTTP=8080 ;;
+	2223) PORT_HTTP=8081 ;;
+esac
+SSH="$SSHCMD -p $PORT_SSH root@127.0.0.1"
+echo "guest reachable on host port $PORT_SSH (ssh) / $PORT_HTTP (http)"
 sleep 5
 
 q() { $SSH "$1" 2>/dev/null; }
@@ -98,11 +121,25 @@ EFI="$(q '[ -d /sys/firmware/efi ] && echo yes')"
 
 PROTO="$(q 'uci get network.lan.proto')"
 PORTN="$(q 'uci get network.lan.device')"
-[ "$PROTO" = "dhcp" ] && pass "single-arm detected: lan($PORTN) proto=dhcp" || fail "expected lan dhcp on a VM guest, got '${PROTO}'"
+LANIP="$(q 'uci get network.lan.ipaddr')"
+# 单臂模式下 lan 是 DHCP 客户端；QEMU 的 user-net 里 netifd 常常在首启时拿不到
+# lease，netfallback 会在 ~60s 后按设计回落到静态 192.168.10.254/24
+# （见 92-nic-autoconfig / netfallback）。两种结果都是「可被主路由/宿主机访问」
+# 的合法终态，所以 dhcp 与回落后的 .254 都要判 pass。
+case "$PROTO" in
+	dhcp)   pass "single-arm detected: lan($PORTN) proto=dhcp" ;;
+	static)
+		if [ "$LANIP" = "192.168.10.254" ]; then
+			pass "single-arm: no lease -> netfallback static $LANIP (by design)"
+		else
+			fail "static lan ${LANIP}, not the expected netfallback address"
+		fi ;;
+	*)      fail "expected lan dhcp on a VM guest, got '${PROTO}'" ;;
+esac
 
 ADDR="$(q "ip -4 -o addr show dev $PORTN 2>/dev/null | awk '{print \$4}' | head -n1")"
 case "$ADDR" in
-	10.0.2.*) pass "lan address from QEMU DHCP: $ADDR" ;;
+	192.168.10.*|10.0.2.*) pass "lan address: $ADDR" ;;
 	*) fail "lan address: ${ADDR:-<none>}" ;;
 esac
 
@@ -118,17 +155,29 @@ esac
 q '[ -c /dev/tty0 ]' && pass "/dev/tty0 present (VT enabled)" || fail "/dev/tty0 missing (CONFIG_VT not enabled)"
 q '[ -c /dev/tty1 ]' && pass "/dev/tty1 present" || warn "/dev/tty1 missing"
 
-ROOTMB="$(q "df -m / | awk 'NR==2 {print \$2}'")"
-if [ -n "$ROOTMB" ] && [ "$ROOTMB" -ge 7000 ] 2>/dev/null; then
-	pass "rootfs grown to ${ROOTMB} MiB (8 GiB virtual disk)"
+# 本镜像强制 squashfs（Config/ARMSR-UEFI.txt 里 EXT4FS=n），而 growroot 自己的
+# 注释就写明 "squashfs installs are left alone —— growroot only touches ext2/3/4
+# root filesystems"，所以 8 GiB 虚拟盘上的剩余空间对 squashfs 而言拿不到，
+# df 显示 ~423 MiB 属正常；再用 ">= 7000 MiB" 去卡会必然 FAIL（把过严的期望当
+# 成真 bug 查了很久）。真正该验的是：overlay（配置/数据写入区）挂上了、且有
+# 可用空间，否则首启改动无处可落。
+if [ "$(q 'mount | grep -c " /overlay "')" -ge 1 ] 2>/dev/null; then
+	pass "squashfs overlay mounted at /overlay"
 else
-	fail "rootfs size ${ROOTMB:-?} MiB, growroot did not run"
+	fail "no /overlay mount — first-boot changes cannot persist"
+fi
+AVAILMB="$(q "df -m / | awk 'NR==2 {print \$4}'")"
+if [ -n "$AVAILMB" ] && [ "$AVAILMB" -ge 256 ] 2>/dev/null; then
+	pass "rootfs writable: ${AVAILMB} MiB available"
+else
+	fail "rootfs only ${AVAILMB:-?} MiB available"
 fi
 
-CODE="$(q "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/cgi-bin/luci/")"
+# 从宿主机一侧请求（走 hostfwd），这一步同时验掉防火墙有没有放行管理与 luCI
+CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT_HTTP}/cgi-bin/luci/")"
 case "$CODE" in
-	200|302|403) pass "LuCI answers on :80 (HTTP $CODE)" ;;
-	*) fail "LuCI HTTP $CODE" ;;
+	200|302|403) pass "LuCI answers via http port $PORT_HTTP (HTTP $CODE)" ;;
+	*) fail "LuCI HTTP $CODE via port $PORT_HTTP" ;;
 esac
 
 q 'command -v rtp2httpd >/dev/null' && pass "rtp2httpd installed" || fail "rtp2httpd missing"
