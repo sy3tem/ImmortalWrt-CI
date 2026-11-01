@@ -99,12 +99,21 @@ set_single_arm() {
 	uci -q commit dhcp
 
 	# 不做 NAT（旁路由模式由用户在 LuCI 决定），并放行 lan 侧管理访问
+	#
+	# 关键坑：uci set 的值绝对不能再自己套一层引号。这里原先写成
+	#   uci -q set "firewall.${lan_zone}.input='ACCEPT'"
+	# 外层用的是双引号，里面的单引号不会被 shell 剥离，而是作为字面字符写进
+	# UCI，uci show 里显示成 firewall.@zone[0].input=''\''ACCEPT'\'''。
+	# fw4 拿到 "'ACCEPT'" 匹配不到任何已知策略，于是 lan zone 的 accept 规则
+	# 一条都不生成，nft input 链只剩 policy drop + handle_reject
+	# (reject with tcp reset) —— 表现就是虚拟机里「拿得到 IP，却 ping/SSH/
+	# Web 全部被 RST」。修复后一律裸写值，不带任何引号。
 	lan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='lan'$/\1/p" | head -n 1)"
 	if [ -n "$lan_zone" ]; then
-		uci -q set "firewall.${lan_zone}.masq='0'"
-		uci -q set "firewall.${lan_zone}.input='ACCEPT'"
-		uci -q set "firewall.${lan_zone}.forward='ACCEPT'"
-		uci -q set "firewall.${lan_zone}.output='ACCEPT'"
+		uci -q set "firewall.${lan_zone}.masq=0"
+		uci -q set "firewall.${lan_zone}.input=ACCEPT"
+		uci -q set "firewall.${lan_zone}.forward=ACCEPT"
+		uci -q set "firewall.${lan_zone}.output=ACCEPT"
 	fi
 
 	echo "nic-autoconfig: single-arm (ports: $ports) -> br-lan dhcp, fallback $FALLBACK_IP"
@@ -152,12 +161,13 @@ set_router() {
 
 	wan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='wan'$/\1/p" | head -n 1)"
 	if [ -n "$wan_zone" ]; then
-		uci -q set "firewall.${wan_zone}.masq='1'"
+		uci -q set "firewall.${wan_zone}.masq=1"
 		# 放行 wan 侧管理访问：否则“路由器上看到分配了 IP，却 ping/SSH/web 全不通”
-		uci -q set "firewall.${wan_zone}.input='ACCEPT'"
+		# （同上的引号坑：必须裸写值，写成 'ACCEPT' 会让该策略失效）
+		uci -q set "firewall.${wan_zone}.input=ACCEPT"
 	fi
 	lan_zone="$(uci -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='lan'$/\1/p" | head -n 1)"
-	[ -n "$lan_zone" ] && uci -q set "firewall.${lan_zone}.input='ACCEPT'"
+	[ -n "$lan_zone" ] && uci -q set "firewall.${lan_zone}.input=ACCEPT"
 
 	echo "nic-autoconfig: router -> wan=$wan lan=$lan_ports ($ROUTER_IP)"
 }
