@@ -187,6 +187,18 @@ q 'grep -q "if true then" /usr/lib/lua/luci/controller/quickstart.lua' \
 	&& pass "quickstart daemon gate patched out" \
 	|| fail "quickstart controller still gated on the iStoreOS daemon"
 
+# 网络向导/无线向导/接口配置 三页的保存接口在 quickstart Go 守护进程里，
+# 本固件没有该守护进程，菜单已摘除；再验一次，避免上游改代码后复活
+if q 'grep -q "entry.*networkguide_index" /usr/lib/lua/luci/controller/quickstart.lua'; then
+	fail "NetworkGuide menu still registered (save would 500 connect failed)"
+else
+	pass "daemon-backed NetworkGuide menu removed"
+fi
+
+q '[ -x /usr/sbin/bypass-router ]' \
+	&& pass "bypass-router helper installed" \
+	|| fail "bypass-router helper missing"
+
 THEME="$(q 'uci get luci.main.mediaurlbase 2>/dev/null')"
 [ "$THEME" = "/luci-static/argon" ] && pass "luci theme: argon" || warn "luci theme: ${THEME:-?}"
 
