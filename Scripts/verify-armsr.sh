@@ -8,7 +8,7 @@
 #
 # Hard checks (job fails): UEFI boot, lan up with an address (QEMU user-net
 # hands out 10.0.2.15), rootfs grown to the 8 GiB virtual disk, LuCI reachable,
-# rtp2httpd + quickstart installed and the quickstart gate patched.
+# rtp2httpd + quickstart installed, and the /cgi-bin/luci/istore proxy path proven end-to-end.
 # Soft checks (warn only): dockerd running, argon theme.
 
 set -uo pipefail
@@ -189,27 +189,46 @@ q 'pgrep -f "/usr/sbin/quickstart serve" >/dev/null' \
 	&& pass "quickstart daemon running" \
 	|| fail "quickstart daemon not running"
 
-# uhttpd 前缀代理是否写进配置（iStoreOS 的 -F prefix=url 补丁）
-q 'uci -q show uhttpd.main.proxy_prefix | grep -q "/guide="' \
-	&& pass "uhttpd proxy_prefix /guide -> 127.0.0.1:3038" \
-	|| fail "uhttpd proxy_prefix /guide missing"
+# 转发链路的中间件：LuCI 的 istore_backend.lua 负责把 /cgi-bin/luci/istore/*
+# 转发到 127.0.0.1:3038，并从 sysauth cookie 取出 sid/token 注入
+# X-Forwarded-Sid / X-Forwarded-Token（后端的 secureHTTP 只认这两个头）。
+q '[ -f /usr/lib/lua/luci/controller/istore_backend.lua ]' \
+	&& pass "istore_backend.lua (LuCI -> quickstart proxy) installed" \
+	|| fail "istore_backend.lua missing — /cgi-bin/luci/istore would 404"
 
-# 端到端：从宿主机直接打向导接口。GET 打到 POST-only 的接口，只要不是 5xx /
-# 000 就证明请求确实到了 Go 后端 —— 移植前这里正好是 "500 connect failed"。
-READY=0
-CODE=""
-for _ in $(seq 1 30); do
-	CODE="$(curl -s -o /dev/null -m 5 -w '%{http_code}' \
-		"http://127.0.0.1:${PORT_HTTP}/guide/gateway-router/" 2>/dev/null)"
-	case "$CODE" in
-		5*|000|"") sleep 2 ;;
-		*) READY=1; break ;;
-	esac
-done
-if [ "$READY" -eq 1 ]; then
-	pass "quickstart API proxied end-to-end (HTTP $CODE)"
+# 必须没有 proxy_prefix：若在 uhttpd 层直接反代，就绕过 LuCI，注入不了
+# X-Forwarded-Sid，后端一律 403。
+q 'test -z "$(uci -q get uhttpd.main.proxy_prefix)"' \
+	&& pass "no uhttpd proxy_prefix (requests go through LuCI session injection)" \
+	|| fail "stale uhttpd proxy_prefix present — would bypass LuCI session injection"
+
+# 端到端：浏览器 -> uhttpd -> istore_backend.lua -> 127.0.0.1:3038 -> quickstart
+# 守护进程缺失时这条路上正是 "500 connect failed"。
+CJAR="$WORK/cookies.txt"
+: > "$CJAR"
+LOGIN_CODE="$(curl -s -o /dev/null -m 10 -w '%{http_code}' -c "$CJAR" \
+	--data 'luci_username=root&luci_password=password' \
+	"http://127.0.0.1:${PORT_HTTP}/cgi-bin/luci/" 2>/dev/null)"
+if grep -q sysauth "$CJAR" 2>/dev/null; then
+	pass "LuCI login ok (sysauth cookie issued)"
 else
-	fail "quickstart API still failing (HTTP ${CODE:-000}) — daemon or proxy broken"
+	fail "LuCI login failed (HTTP ${LOGIN_CODE:-000}) — cannot test quickstart path"
+fi
+
+API_CODE="000"
+API_BODY=""
+for _ in $(seq 1 20); do
+	RESP="$(curl -s -m 10 -b "$CJAR" -w '\n%{http_code}' \
+		"http://127.0.0.1:${PORT_HTTP}/cgi-bin/luci/istore/guide/need/setup/" 2>/dev/null)"
+	API_CODE="${RESP##*$'\n'}"
+	API_BODY="${RESP%$'\n'*}"
+	[ "$API_CODE" = "200" ] && break
+	sleep 2
+done
+if [ "$API_CODE" = "200" ]; then
+	pass "quickstart API reachable end-to-end (HTTP 200 via LuCI proxy)"
+else
+	fail "quickstart API broken (HTTP ${API_CODE:-000}, body: ${API_BODY:0:120})"
 fi
 
 q '[ -x /usr/sbin/bypass-router ]' \
