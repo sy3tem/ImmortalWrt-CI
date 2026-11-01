@@ -39,7 +39,14 @@ if [ -f "$QS" ]; then
 	sed -i 's/if luci\.sys\.call("pgrep quickstart [^"]*") == 0 then/if true then/' "$QS"
 	# the daemon-backed auto_setup/taskd endpoints stay dormant without taskd;
 	# guard them so a missing /etc/init.d/tasks cannot break the page
-	sed -i 's|cmd = "/etc/init.d/tasks task_add auto_setup "|cmd = "true " ..|' "$QS" 2>/dev/null || true
+	# 替换后必须是 cmd = "true "，不能带 ".." —— 原句形如
+	#   cmd = "/etc/init.d/tasks task_add auto_setup " .. luci.util.shellquote(cmd)
+	# 这里只替换左边的字符串字面量，右边的 ".." 要原样保留。以前写成
+	#   ...|cmd = "true " ..|  会留下两个相邻的连接符：
+	#   cmd = "true " .. .. luci.util.shellquote(cmd)
+	# Lua 解析失败：quickstart.lua:136: unexpected symbol near '..'，进而让
+	# LuCI 整个打不开（HTTP 500 Unhandled exception during request dispatching）。
+	sed -i 's|cmd = "/etc/init.d/tasks task_add auto_setup "|cmd = "true "|' "$QS" 2>/dev/null || true
 	echo "quickstart: daemon gate removed"
 else
 	echo "quickstart: package not present, skipped"
