@@ -30,6 +30,7 @@ mkdir -p "$DEST"
 cp -a "$SRC/." "$DEST/"
 find "$DEST/etc/uci-defaults" -type f -exec chmod 0755 {} \; 2>/dev/null || true
 chmod 0755 "$DEST/etc/init.d/growroot" "$DEST/etc/init.d/netfallback" 2>/dev/null || true
+chmod 0755 "$DEST/usr/sbin/bypass-router" 2>/dev/null || true
 echo "overlay installed into package/base-files/files:"
 ( cd "$SRC" && find . -type f | sort | sed 's/^/   /' )
 
@@ -47,7 +48,28 @@ if [ -f "$QS" ]; then
 	# Lua 解析失败：quickstart.lua:136: unexpected symbol near '..'，进而让
 	# LuCI 整个打不开（HTTP 500 Unhandled exception during request dispatching）。
 	sed -i 's|cmd = "/etc/init.d/tasks task_add auto_setup "|cmd = "true "|' "$QS" 2>/dev/null || true
-	echo "quickstart: daemon gate removed"
+
+	# ---- 摘掉「网络向导 / 无线向导 / 接口配置」入口 -----------------------
+	# 这些页面是 iStoreOS 的 Vue 前端，数据全靠 quickstart Go 守护进程：
+	#   保存旁路由  POST /guide/gateway-router/
+	#   读取网口    GET  /network/port/list/
+	#   读取状态    GET  /u/network/status/
+	# 本固件没有编入该守护进程（它不在任何 feed 里，闭源、无 aarch64 发布），
+	# 这些路径没有任何程序监听，uhttpd 直接回 500 connect failed —— 表现就是
+	# 用户填完静态 IP 点「保存配置」报「网络异常：500 connect failed」。
+	# 前端代码是压缩后的 bundle，没法改成走 ubus，所以直接不注册这些菜单项，
+	# 免得用户点进去踩坑。旁路由请用 /usr/sbin/bypass-router（见下）或原生
+	# 的「网络 → 接口」页面。
+	#
+	# 只删 entry 行，不动 networkguide_index()/quickwifi_index() 函数体：
+	# 函数名是 networkguide_index（无下划线），build_url 里才有 "network_guide"，
+	# 用 /network_guide/d 会把 redirect 函数体删空导致 Lua 语法错误。
+	sed -i '/call("networkguide_index")/d' "$QS"
+	sed -i '/entry(.*"network_guide", "pages"/d' "$QS"
+	sed -i '/call("quickwifi_index")/d' "$QS"
+	sed -i '/entry(.*"quickwifi", "pages"/d' "$QS"
+	sed -i '/entry(.*"interfaceconfig"/d' "$QS"
+	echo "quickstart: daemon gate removed, daemon-backed menus unregistered"
 else
 	echo "quickstart: package not present, skipped"
 fi
