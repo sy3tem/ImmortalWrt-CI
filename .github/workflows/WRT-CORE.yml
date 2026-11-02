@@ -142,6 +142,12 @@ jobs:
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
+          # 文件名里的 wifi 段：带 WiFi 的设备 wifi-yes，其余（含 armsr/x86 虚拟机）wifi-no
+          case "${WRT_CONFIG^^}" in
+            *NOWIFI*|*ARMSR*|*X86*) echo "WRT_WIFI=wifi-no"  >> $GITHUB_ENV ;;
+            *)                       echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV ;;
+          esac
+
           # variant marker used in the release tag only (files keep upstream names)
           case "${WRT_CONFIG^^}" in
             *NOWIFI*) echo "WRT_VARIANT=nowifi" >> $GITHUB_ENV ;;
@@ -263,23 +269,29 @@ jobs:
             find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
 
-            # ---- 附件分类 + 配对重命名 -------------------------------------------
-            # GitHub Release 附件按文件名排序、无法自定义分组，这里用前缀把三类在
-            # 列表里天然分开，并让同一设备的“配置”与“固件”文件名紧邻：
-            #   nowifi_ 不带 WiFi 设备 | vm_ 虚拟机(armsr / x86) | wifi_ 带 WiFi 设备
-            #   每设备：<CAT>_<CONFIG>_config.txt 紧挨 <CAT>_<CONFIG>_immortalwrt-...
-            # 同时永不发布 u-boot（刷机用出厂 bootloader 即可，release 不需要）。
-            case "${WRT_CONFIG^^}" in
-              *NOWIFI*) CAT="nowifi" ;;
-              *ARMSR*|*X86*) CAT="vm" ;;
-              *) CAT="wifi" ;;
-            esac
+            # ---- 统一文件名（与 ImmortalWrt-R28S 仓库完全一致）-----------------
+            #   <源码>-<分支>-<wifi-yes|wifi-no>-<target>-<subtarget>[-<设备>]-<文件系统>[-full]-<日期>.<扩展名>
+            # 例：immortalwrt-master-wifi-no-armsr-armv8-generic-squashfs-combined-efi-26.11.02-09.43.18.qcow2
+            # 好处：日期在末尾，同一设备不同批次一眼可分；不再有 vm_/wifi_ 这类前缀，
+            # 也不必在配置名和上游名之间反复对照。
+            # u-boot 一律不发布（刷机用出厂 bootloader 即可）。
+            FULL_MARK=""
+            [[ "${WRT_CONFIG,,}" == *full* ]] && FULL_MARK="-full"
             cd ./upload
-            for c in Config-*.txt; do
-              [ -f "$c" ] && mv -f "$c" "${CAT}_${WRT_CONFIG}_config.txt"
-            done
-            for f in $(ls | grep -v "^${CAT}_${WRT_CONFIG}_" | grep -v "u-boot"); do
-              [ -f "$f" ] && mv -f "$f" "${CAT}_${WRT_CONFIG}_${f}"
+            for f in *; do
+              [ -f "$f" ] || continue
+              case "$f" in
+                Config-*|*u-boot*) continue ;;
+              esac
+              base="${f%%.*}"
+              ext="${f#*.}"
+              name="$(printf '%s' "$base" | grep -io "\($WRT_TARGET\).*")"
+              # 上游名里已带 -full 时不再重复追加
+              [[ "$name" == *full ]] && FULL_MARK=""
+              # 兜底：若文件名里没有 target 关键字（多 profile 配置、或上游改名），
+              # 退化为「去掉 immortalwrt-snapshot-r0-<hash>- 前缀」，避免二次拼接
+              [ -n "$name" ] || name="$(printf '%s' "$base" | sed -E 's/^[^-]+-snapshot-r[0-9]+-[0-9a-f]+-//')"
+              mv -f "$f" "${WRT_INFO}-${WRT_BRANCH}-${WRT_WIFI}-${name}${FULL_MARK}-${WRT_DATE}.${ext}"
             done
             rm -f ./*u-boot*
             cd ..
@@ -363,11 +375,10 @@ jobs:
             内核版本：${{env.WRT_KVER}}
             插件列表：${{env.WRT_LIST}}
 
-            提示：固件文件名与 ImmortalWrt 官方发布保持一致
-            （immortalwrt-<平台>-<子目标>-<设备>-squashfs-sysupgrade.*）。
-
-            附件按类别前缀分组（GitHub 按文件名排序，三类天然分开）：
-              nowifi_ 不带 WiFi 的设备
-              vm_     虚拟机镜像（armsr / x86，UEFI 启动，可直接导入 KVM / fnOS / VMware / Proxmox）
-              wifi_   带 WiFi 的设备
-            每个设备 “<CAT>_<CONFIG>_config.txt” 紧邻其固件，方便一一对应下载。
+            文件命名（与 ImmortalWrt-R28S 仓库一致）：
+              <源码>-<分支>-<wifi-yes|wifi-no>-<平台>-<子目标>[-<设备>]-<文件系统>-<时间>.<扩展名>
+              例：immortalwrt-master-wifi-no-armsr-armv8-generic-squashfs-combined-efi-26.11.02-09.43.18.qcow2
+            wifi-yes / wifi-no 标明该固件是否包含 WiFi 支持；
+            虚拟机镜像（armsr / x86，UEFI 启动，可直接导入 KVM / fnOS / VMware / Proxmox）
+            同样遵循该规则，wifi 段为 wifi-no。
+            对应的配置快照为 Config-<配置名>-<源码>-<分支>-<时间>.txt。

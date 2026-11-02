@@ -182,53 +182,19 @@ esac
 
 q 'command -v rtp2httpd >/dev/null' && pass "rtp2httpd installed" || fail "rtp2httpd missing"
 
-q '[ -f /www/luci-static/quickstart/index.js ]' && pass "quickstart assets installed" || fail "quickstart assets missing"
-
-# 守护进程是否真的在跑：前端的引导/保存/状态卡片全看它
-q 'pgrep -f "/usr/sbin/quickstart serve" >/dev/null' \
-	&& pass "quickstart daemon running" \
-	|| fail "quickstart daemon not running"
-
-# 转发链路的中间件：LuCI 的 istore_backend.lua 负责把 /cgi-bin/luci/istore/*
-# 转发到 127.0.0.1:3038，并从 sysauth cookie 取出 sid/token 注入
-# X-Forwarded-Sid / X-Forwarded-Token（后端的 secureHTTP 只认这两个头）。
-q '[ -f /usr/lib/lua/luci/controller/istore_backend.lua ]' \
-	&& pass "istore_backend.lua (LuCI -> quickstart proxy) installed" \
-	|| fail "istore_backend.lua missing — /cgi-bin/luci/istore would 404"
-
-# 必须没有 proxy_prefix：若在 uhttpd 层直接反代，就绕过 LuCI，注入不了
-# X-Forwarded-Sid，后端一律 403。
-q 'test -z "$(uci -q get uhttpd.main.proxy_prefix)"' \
-	&& pass "no uhttpd proxy_prefix (requests go through LuCI session injection)" \
-	|| fail "stale uhttpd proxy_prefix present — would bypass LuCI session injection"
-
-# 端到端：浏览器 -> uhttpd -> istore_backend.lua -> 127.0.0.1:3038 -> quickstart
-# 守护进程缺失时这条路上正是 "500 connect failed"。
-CJAR="$WORK/cookies.txt"
-: > "$CJAR"
-LOGIN_CODE="$(curl -s -o /dev/null -m 10 -w '%{http_code}' -c "$CJAR" \
-	--data 'luci_username=root&luci_password=password' \
-	"http://127.0.0.1:${PORT_HTTP}/cgi-bin/luci/" 2>/dev/null)"
-if grep -q sysauth "$CJAR" 2>/dev/null; then
-	pass "LuCI login ok (sysauth cookie issued)"
+# quickstart 整套已移除。当初移植它只为让「网络向导」那张 Vue 页面能保存，
+# 代价是 12 MB 的 Go 二进制 + 一整套前端 + shadow-utils/mdadm/smartmontools
+# 等一堆依赖，功能与原生 LuCI 完全重叠。反向断言，防止哪天又被引回来。
+if q '[ -e /usr/sbin/quickstart ] || [ -e /www/luci-static/quickstart/index.js ]'; then
+	fail "iStoreOS quickstart artifacts present — they were supposed to be removed"
 else
-	fail "LuCI login failed (HTTP ${LOGIN_CODE:-000}) — cannot test quickstart path"
+	pass "no iStoreOS quickstart artifacts (daemon + frontend removed)"
 fi
 
-API_CODE="000"
-API_BODY=""
-for _ in $(seq 1 20); do
-	RESP="$(curl -s -m 10 -b "$CJAR" -w '\n%{http_code}' \
-		"http://127.0.0.1:${PORT_HTTP}/cgi-bin/luci/istore/guide/need/setup/" 2>/dev/null)"
-	API_CODE="${RESP##*$'\n'}"
-	API_BODY="${RESP%$'\n'*}"
-	[ "$API_CODE" = "200" ] && break
-	sleep 2
-done
-if [ "$API_CODE" = "200" ]; then
-	pass "quickstart API reachable end-to-end (HTTP 200 via LuCI proxy)"
+if q 'uci -q get uhttpd.main.proxy_prefix'; then
+	fail "stale uhttpd proxy_prefix present"
 else
-	fail "quickstart API broken (HTTP ${API_CODE:-000}, body: ${API_BODY:0:120})"
+	pass "uhttpd config clean (no proxy_prefix)"
 fi
 
 q '[ -x /usr/sbin/bypass-router ]' \

@@ -70,28 +70,7 @@ CONFIG_PACKAGE_rtp2httpd=y
 CONFIG_PACKAGE_luci-app-rtp2httpd=y
 CONFIG_PACKAGE_luci-i18n-rtp2httpd-zh-cn=y
 
-#--- quickstart 首页（iStoreOS 仪表盘 + 网络向导，守护进程整套移植）---------
-# 前端 bundle、Go 守护进程、init 脚本都由 Scripts/Quickstart.sh 解官方 ipk
-# 铺进 rootfs，不再作为编译包；这里只把它的运行时依赖显式打开：
-#   luci-lua-runtime  —— 0.17.0 前端仍是 Lua controller（luci-compat 运行时）
-#   shadow-utils      —— 守护进程建用户/改组（Samba、Docker 面板）
-#   mount-utils       —— mount/umount 完整版（磁盘页）
-#   e2fsprogs         —— mkfs/e2fsck（格盘、扩分区）
-#   smartmontools*    —— SMART 面板
-#   mdadm             —— RAID 面板
-#   block-mount       —— 挂载点管理
-CONFIG_PACKAGE_luci-lua-runtime=y
-# 0.17.0 前端仍是 Lua controller（lua_prefix 由 uhttpd-mod-lua 提供），
-# 只有 ucode 的 LuCI 主体是默认安装的，这个插件要显式打开
-CONFIG_PACKAGE_uhttpd-mod-lua=y
-CONFIG_PACKAGE_shadow-utils=y
-CONFIG_PACKAGE_mount-utils=y
-CONFIG_PACKAGE_e2fsprogs=y
-CONFIG_PACKAGE_smartmontools=y
-CONFIG_PACKAGE_smartd=y
-CONFIG_PACKAGE_smartmontools-drivedb=y
-CONFIG_PACKAGE_mdadm=y
-CONFIG_PACKAGE_block-mount=y
+#--- 流量统计（独立于 quickstart，原生 LuCI 页面）---
 CONFIG_PACKAGE_luci-app-nlbwmon=y
 CONFIG_PACKAGE_nlbwmon=y
 CONFIG_PACKAGE_luci-i18n-nlbwmon-zh-cn=y

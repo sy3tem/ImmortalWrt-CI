@@ -7,9 +7,8 @@
 # What it does
 #   1. copies target-patch/armsr/files/** into package/base-files/files
 #      (nic autoconfig, growroot, netfallback, VM defaults)
-#   2. installs the iStoreOS quickstart daemon (see Scripts/Quickstart.sh) so
-#      the /cgi-bin/luci/istore frontend has a backend to talk to
-#   3. makes sure the growroot / netfallback init scripts are executable
+#   2. patches the armsr kernel config (VT/fbcon so the VM console is not black)
+#   3. makes sure the growroot / netfallback / bypass-router are executable
 #
 # Nothing here touches other targets: Settings.sh only calls this for *ARMSR*.
 
@@ -34,45 +33,16 @@ chmod 0755 "$DEST/usr/sbin/bypass-router" 2>/dev/null || true
 echo "overlay installed into package/base-files/files:"
 ( cd "$SRC" && find . -type f | sort | sed 's/^/   /' )
 
-# ---- 不需要给 uhttpd 打 proxy_prefix 补丁 ----------------------------------
-# 一度以为必须让 uhttpd 按 /guide /u /nas 这些前缀反代到 127.0.0.1:3038，
-# 于是移植了 iStoreOS 的 -F 补丁。实际翻 luci-app-quickstart 的源码后发现
-# 走的是另一条路，根本用不上：
+# ---- 不装 iStoreOS 的 quickstart 那一套 --------------------------------------
+# 曾经把 quickstart 的 Go 守护进程 + 0.17 前端整套移植进来，只为让「网络向导」
+# 那张 Vue 页面能保存。代价是 12 MB 静态二进制、一整套前端 bundle，外加
+# shadow-utils / mount-utils / smartmontools / mdadm / luci-lua-runtime 等
+# 一堆依赖，固件明显变大，而它提供的功能与原生 LuCI 完全重叠。
+# 现在整套移除：旁路由请用 /usr/sbin/bypass-router（见下）或「网络 → 接口」，
+# 其他卡片（磁盘、端口、容器）本来就有对应的原生页面。
 #
-#   www/luci-static/quickstart/index.js 里所有请求都由
-#       const du = "/cgi-bin/luci/istore"
-#       Q = (a, o) => (a.indexOf("//") == -1 && (a = `${du}${a}`), ...)
-#   拼成 /cgi-bin/luci/istore/guide/gateway-router/ 这样的绝对路径，
-#   而后端（quickstart serve）恰好就注册在 /cgi-bin/luci/istore/... 下。
-#
-#   中间那一段由 LuCI 自己的 Lua controller 完成 ——
-#   /usr/lib/lua/luci/controller/istore_backend.lua，注册 entry{"istore"}，
-#   收到 /cgi-bin/luci/istore/* 后连 127.0.0.1:3038，把 REQUEST_URI 原样转发，
-#   并从 sysauth cookie 里取出 sid、用 ubus 查回 token，注入
-#       X-Forwarded-Sid / X-Forwarded-Token
-#   后端的 secureHTTP 中间件正是校验这两个头（RootAuthorizer）。
-#
-#   这也解释了原来的「500 connect failed」：3038 没有进程监听时，
-#   istore_backend.lua 的 nixio.connect 失败，直接 http.status(500, "connect failed")。
-#   装上守护进程后这条路自然就通了，uhttpd 一动都不用动。
-#
-# 所以这里不再注入 uhttpd 补丁，也不再配置 proxy_prefix。绕过 LuCI 直接在
-# uhttpd 层代理反而有害：拿不到 X-Forwarded-Sid/Token，后端一律 403。
-
-# ---- quickstart: iStoreOS 守护进程 + 官方前端（完整移植） -----------------
-# 以前只装前端、没有守护进程，所有 /guide /u /nas 接口都回 500 connect failed。
-# 现在从官方 alpha 通道取 aarch64 ipk（sha256 锁定），把二进制、init 脚本、
-# 配置和前端 bundle 一起铺进 rootfs。请求由 LuCI 的 istore_backend.lua 转发到
-# 127.0.0.1:3038，uhttpd 不需要任何改动。详见 Scripts/Quickstart.sh 顶部说明。
-# 必须显式判断：本脚本是 set -e，一旦这里失败，后面的内核选项修正、上游
-# kmod-thunderx-net 清理、镜像裁剪都不会执行，构建会一路跑到 install 阶段才
-# 以 "kmod-thunderx-net (no such package)" 这种完全不相干的形式报错，很难定位。
-# 所以这里直接快速失败，把真实原因留在 Custom Settings 步骤里。
-if ! bash "$GITHUB_WORKSPACE/Scripts/Quickstart.sh"; then
-	echo "ERROR: quickstart integration failed — aborting here so the build does not" >&2
-	echo "       continue with a half-patched tree (see the message above)." >&2
-	exit 1
-fi
+# 副作用是侧边栏不会再有「网络向导 / 无线向导 / 接口配置」三条入口，因此也不会
+# 再出现「保存配置 → 500 connect failed」。
 
 # ---- 让虚拟机图形控制台有输出 ----------------------------------------------
 # 默认内核配置（target/linux/generic/config-6.18）里 "# CONFIG_VT is not set"，

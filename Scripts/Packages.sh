@@ -76,11 +76,10 @@ if [ ! -d "$PKG_PATH/luci-app-store" ]; then
 	echo "iStore (luci-app-store + luci-lib-taskd + luci-lib-xterm + taskd) extracted!"
 fi
 
-# ---- luci-app-quickstart — 改由 Scripts/Quickstart.sh 提供 ------------------
-# 上游 linkease/nas-packages-luci 里的 LuCI 包只有前端，且版本停在 0.12.10；
-# 我们要的是「守护进程 + 配套前端」整套（0.17.0），直接解官方 ipk 铺进
-# rootfs。这里不再克隆包，否则编译安装的同名包会覆盖 overlay 里的新前端，
-# 出现前端 0.12 配后端 0.17 的接口错配。
+# ---- luci-app-quickstart：不装 ---------------------------------------------
+# 它只是一个纯前端 SPA，所有接口都靠 iStoreOS 的 Go 守护进程；为了「网络向导」
+# 能保存而把守护进程整套塞进固件，体积和依赖都不划算，现已整体移除。
+# 旁路由配置请用 /usr/sbin/bypass-router 或原生「网络 → 接口」。
 
 # ---- athena-led (雅典娜 RE-CS-02 点阵屏) — external, pinned to v2.4.0 -------
 # Two packages: athena-led (core) + luci-app-athena-led (LuCI).
