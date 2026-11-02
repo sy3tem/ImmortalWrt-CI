@@ -2,8 +2,8 @@
 # x86/64 — 通用 UEFI 虚拟机 / 物理机镜像
 #
 # 目标平台：KVM / VMware / Proxmox / 飞牛虚拟机 / 物理 x86 小主机（UEFI 启动）
-# 产物：immortalwrt-x86-64-generic-squashfs-combined-efi.img.gz
-# 与 armsr 同属“虚拟机(vm_)”类别，按天与 RK / QCA 合并进同一个 Release。
+# 产物：immortalwrt-master-wifi-no-x86-64-generic-squashfs-combined-efi-<时间>.img.gz
+# 与 armsr 同属虚拟机（wifi-no），按天与 RK / QCA 合并进同一个 Release。
 # 网口首启自动识别：1 口 = 单臂(DHCP + 回落)，>=2 口 = wan+lan 路由器。
 
 name: X86-64
