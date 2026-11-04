@@ -40,9 +40,9 @@ echo "== armsr/UEFI smoke test =="
 # 否则 fallback 到任意 combined-efi.img.gz（解压后转 qcow2 测试）。
 # 注意：必须真能找到可启动镜像，否则明确失败 —— 不能再像以前那样只找
 # *ext4-combined-efi.qcow2（本项目从不生成 ext4），导致测试空跑却显示“成功”。
-IMG="$(ls "$IMGDIR"/*squashfs-combined-efi.qcow2 2>/dev/null | head -n1)"
+IMG="$(ls "$IMGDIR"/*squashfs-combined-efi*.qcow2 2>/dev/null | head -n1)"
 if [ -z "$IMG" ]; then
-	IMG="$(ls "$IMGDIR"/*combined-efi.img.gz 2>/dev/null | head -n1)"
+	IMG="$(ls "$IMGDIR"/*combined-efi*.img.gz 2>/dev/null | head -n1)"
 fi
 if [ -z "$IMG" ]; then
 	echo "no bootable armsr image (*squashfs-combined-efi.qcow2 or *combined-efi.img.gz) in $IMGDIR"
