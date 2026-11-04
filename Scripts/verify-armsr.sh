@@ -7,8 +7,9 @@
 #   ./Scripts/verify-armsr.sh <dir-with-images>
 #
 # Hard checks (job fails): UEFI boot, lan up with an address (QEMU user-net
-# hands out 10.0.2.15), rootfs grown to the 8 GiB virtual disk, LuCI reachable,
-# rtp2httpd + quickstart installed, and the /cgi-bin/luci/istore proxy path proven end-to-end.
+# hands out 10.0.2.15), kernel console on tty0 (CONFIG_VT), squashfs overlay
+# mounted, LuCI reachable, rtp2httpd + bypass-router present, and the iStoreOS
+# quickstart leftovers absent (reverse assertion — they must NOT come back).
 # Soft checks (warn only): dockerd running, argon theme.
 
 set -uo pipefail
@@ -24,7 +25,9 @@ FAIL=0
 WARN=0
 
 pass() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
-fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL + 1)); }
+# ::error:: 会额外生成一条 GitHub annotation，公开仓库匿名也能读到，
+# 这样冒烟挂了不必再登录去翻整段日志就能知道是哪一项。
+fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; echo "::error title=smoke::$1"; FAIL=$((FAIL + 1)); }
 warn() { printf '  \033[33mWARN\033[0m  %s\n' "$1"; WARN=$((WARN + 1)); }
 
 cleanup() {
@@ -40,12 +43,21 @@ echo "== armsr/UEFI smoke test =="
 # 否则 fallback 到任意 combined-efi.img.gz（解压后转 qcow2 测试）。
 # 注意：必须真能找到可启动镜像，否则明确失败 —— 不能再像以前那样只找
 # *ext4-combined-efi.qcow2（本项目从不生成 ext4），导致测试空跑却显示“成功”。
-IMG="$(ls "$IMGDIR"/*squashfs-combined-efi*.qcow2 2>/dev/null | head -n1)"
+#
+# 另一个坑：改名之后文件名形如
+#   immortalwrt-main-wifi-no-armsr-armv8-generic-squashfs-combined-efi-26.11.02-09.43.18.qcow2
+# 时间戳被插到扩展名之前，所以 glob 不能再写死 "*squashfs-combined-efi.qcow2"，
+# 必须写成 "*squashfs-combined-efi*.qcow2"，否则明明有镜像也会报“找不到可启动镜像”。
+# 用 compgen 而不是 "ls $模式"：后者依赖 word splitting 才会展开通配符，
+# 换个 shell（比如 zsh）就静默失效，正是这类脚本最容易踩的坑。
+pick() { compgen -G "$1" 2>/dev/null | head -n1; }
+IMG="$(pick "$IMGDIR/*squashfs-combined-efi*.qcow2")"
+[ -n "$IMG" ] || IMG="$(pick "$IMGDIR/*combined-efi*.qcow2")"
+[ -n "$IMG" ] || IMG="$(pick "$IMGDIR/*combined-efi*.img.gz")"
+[ -n "$IMG" ] || IMG="$(pick "$IMGDIR/*.qcow2")"
 if [ -z "$IMG" ]; then
-	IMG="$(ls "$IMGDIR"/*combined-efi*.img.gz 2>/dev/null | head -n1)"
-fi
-if [ -z "$IMG" ]; then
-	echo "no bootable armsr image (*squashfs-combined-efi.qcow2 or *combined-efi.img.gz) in $IMGDIR"
+	echo "::error title=smoke::no bootable armsr image (*squashfs-combined-efi*.qcow2 / *combined-efi*.img.gz) in $IMGDIR"
+	echo "no bootable armsr image (*squashfs-combined-efi*.qcow2 or *combined-efi*.img.gz) in $IMGDIR"
 	ls -l "$IMGDIR"
 	exit 1
 fi
