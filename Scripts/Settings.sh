@@ -96,10 +96,6 @@ bash "$GITHUB_WORKSPACE/Scripts/Inject-ITV.sh"
 CFG_LC="${WRT_CONFIG,,}"
 
 case "$CFG_LC" in
-*armsr*)
-	# armsr/armv8 — UEFI (edk2/AAVMF) 虚拟机镜像（fnOS / KVM）
-	bash "$GITHUB_WORKSPACE/Scripts/Inject-ARMSR.sh"
-	;;
 *rt28*)
 	# Hugsun RT28 (RK3528 + RTL8367B switch + MT7916 WiFi)
 	bash "$GITHUB_WORKSPACE/Scripts/Inject-RT28.sh"
@@ -112,16 +108,9 @@ case "$CFG_LC" in
 	# 亚瑟 / 雅典娜 — already supported by the official tree, nothing to inject.
 	echo "JDCloud device: using official in-tree support (no injection needed)"
 	;;
-*x86*)
-	# x86/64 — UEFI 虚拟机 / 物理机镜像。GRUB 默认 cmdline 末尾是串口
-	# console=ttyS0，/dev/console 因此指向串口，inittab 的 ::askconsole: 只在
-	# 串口起 login —— 虚拟机屏幕上只有内核日志、没有登录提示，看着像"没画面"。
-	# 这里在 tty1 上额外起一个 askfirst 登录，屏幕和串口都能登录。
-	INITTAB="./package/base-files/files/etc/inittab"
-	if [ -f "$INITTAB" ] && ! grep -q '^tty1::' "$INITTAB"; then
-		echo 'tty1::askfirst:/usr/libexec/login.sh' >> "$INITTAB"
-		echo "x86: added tty1 login prompt for the graphical console"
-	fi
+*)
+	# 本仓库只维护 ARM 实机（rockchip / qualcommax）；ARMSR / x86 已整体移除。
+	echo "WARN: unknown config '$WRT_CONFIG' — no platform injection applied"
 	;;
 esac
 
