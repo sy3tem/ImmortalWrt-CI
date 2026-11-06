@@ -21,8 +21,9 @@
    `Config/GENERAL.txt` 不再选这两个包，`Scripts/Packages.sh` 也不再从
    `linkease/istore` 现场提取，`Scripts/Settings.sh` 里配套的 taskd 修复一并删掉。
    要装请自己刷完机后从 LuCI/软件包手动安装。
-3. **固件文件名 100% 与官方一致** — 不做任何重命名。带/不带 WiFi 的差异
-   通过 **Release 标签** 区分，而不是改文件名。
+3. **固件文件名以上游命名为准** — 内核/镜像本身不重命名，只在前面加
+   `<源码>-<分支>-<wifi-yes|wifi-no>`、末尾加构建时间（见 WRT-CORE 打包步骤），
+   这样同一设备不同批次、带/不带 WiFi 一眼可分。
 4. **IPTV 固化进防火墙** — `itv` zone 直接写进出厂的
    `/etc/config/firewall`，首次开机就在（详见下文）。
 5. **平台注入都是增量** — 新增文件直接落盘，已有文件只用 patch /
@@ -30,15 +31,15 @@
 
 ## 变体与命名
 
-| 配置（Config/*.txt） | 设备 | WiFi | Release 标签前缀 |
+| 配置（Config/*.txt） | 设备 | WiFi | 文件名里的变体标记 |
 |---|---|---|---|
-| `R28S-WIFI` | R28S | 有（AIC8800） | `R28S-WIFI-…` |
-| `R28S-NOWIFI` | R28S | 无 | `R28S-NOWIFI-…` |
-| `RT28` | RT28 | 有（MT7916） | `RT28-…` |
-| `JDCLOUD-RE-SS-01-WIFI` | 亚瑟 | 有 | `JDCLOUD-RE-SS-01-WIFI-…` |
-| `JDCLOUD-RE-SS-01-NOWIFI` | 亚瑟 | 无 | `JDCLOUD-RE-SS-01-NOWIFI-…` |
-| `JDCLOUD-RE-CS-02-WIFI` | 雅典娜 | 有 | `JDCLOUD-RE-CS-02-WIFI-…` |
-| `JDCLOUD-RE-CS-02-NOWIFI` | 雅典娜 | 无 | `JDCLOUD-RE-CS-02-NOWIFI-…` |
+| `R28S-WIFI` | R28S | 有（AIC8800） | `wifi-yes` |
+| `R28S-NOWIFI` | R28S | 无 | `wifi-no` |
+| `RT28` | RT28 | 有（MT7916） | `wifi-yes` |
+| `JDCLOUD-RE-SS-01-WIFI` | 亚瑟 | 有 | `wifi-yes` |
+| `JDCLOUD-RE-SS-01-NOWIFI` | 亚瑟 | 无 | `wifi-no` |
+| `JDCLOUD-RE-CS-02-WIFI` | 雅典娜 | 有 | `wifi-yes` |
+| `JDCLOUD-RE-CS-02-NOWIFI` | 雅典娜 | 无 | `wifi-no` |
 
 > 无 WiFi 版 = 关掉 `kmod-ath` / `mac80211` / `wpad` / `wifi-scripts` / 无线固件
 > （见 `Scripts/Settings.sh`），**并裁剪设备的 `DEVICE_PACKAGES`**
