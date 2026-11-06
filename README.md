@@ -14,13 +14,18 @@
 
 1. **只用官方源码** — `immortalwrt/immortalwrt @ master`。
    不再依赖任何第三方 fork：亚瑟 / 雅典娜 官方树已自带设备定义、DTS、
-   `ipq-wifi` board 数据；`rtp2httpd` / `homeproxy` / `openclash` /
-   `dockerman` / `argon-config` / `appfilter` 也都在官方 feeds 里。
-2. **固件文件名 100% 与官方一致** — 不做任何重命名。带/不带 WiFi 的差异
+   `ipq-wifi` board 数据；`rtp2httpd` / `homeproxy` / `dockerman` /
+   `argon-config` / `appfilter` 也都在官方 feeds 里。
+2. **不带 OpenClash、不带 iStore 应用商店** — 代理（oc/clash/mihomo）和
+   iStore 商店（`luci-app-store` + `taskd` 四件套）已从本仓库整体移除：
+   `Config/GENERAL.txt` 不再选这两个包，`Scripts/Packages.sh` 也不再从
+   `linkease/istore` 现场提取，`Scripts/Settings.sh` 里配套的 taskd 修复一并删掉。
+   要装请自己刷完机后从 LuCI/软件包手动安装。
+3. **固件文件名 100% 与官方一致** — 不做任何重命名。带/不带 WiFi 的差异
    通过 **Release 标签** 区分，而不是改文件名。
-3. **IPTV 固化进防火墙** — `itv` zone 直接写进出厂的
+4. **IPTV 固化进防火墙** — `itv` zone 直接写进出厂的
    `/etc/config/firewall`，首次开机就在（详见下文）。
-4. **平台注入都是增量** — 新增文件直接落盘，已有文件只用 patch /
+5. **平台注入都是增量** — 新增文件直接落盘，已有文件只用 patch /
    `awk` 定点插入，绝不整文件覆盖，尽量避免上游漂移。
 
 ## 变体与命名
@@ -35,11 +40,16 @@
 | `JDCLOUD-RE-CS-02-WIFI` | 雅典娜 | 有 | `JDCLOUD-RE-CS-02-WIFI-…` |
 | `JDCLOUD-RE-CS-02-NOWIFI` | 雅典娜 | 无 | `JDCLOUD-RE-CS-02-NOWIFI-…` |
 
-> 无 WiFi 版 = 关掉 `kmod-ath11k` / `mac80211` / `wpad` / 无线固件
+> 无 WiFi 版 = 关掉 `kmod-ath` / `mac80211` / `wpad` / `wifi-scripts` / 无线固件
 > （见 `Scripts/Settings.sh`），**并裁剪设备的 `DEVICE_PACKAGES`**
 > （`Scripts/Post-Defconfig.sh`，因为这些包会被强制装进 rootfs，只设
-> `CONFIG_PACKAGE_x=n` 不足以移除）。**不修改 DTS**，所以固件名与有 WiFi 版
-> 完全相同，靠 Release 标签区分。
+> `CONFIG_PACKAGE_x=n` 不足以移除）。**不修改 DTS**，所以除了文件名里的
+> `wifi-yes` / `wifi-no` 段之外与有 WiFi 版一致。
+>
+> 光看 `.config` 判断不了有没有真去掉：被裁掉的包在 `.config` 里仍是 `=m`。
+> 所以 WRT-CORE 编完会跑 `Verify no-WiFi image`，直接 grep 最终镜像的
+> `.manifest`（实际装机清单），只要还剩 `wpad*` / `kmod-mac80211` /
+> `wifi-scripts` / `kmod-aic8800*` / `ipq-wifi-*` 之类就**直接失败、不发 Release**。
 
 ## 触发编译
 
@@ -79,7 +89,7 @@ Scripts/
   Settings.sh        默认主题/IP/主机名/时区 + apk 源 + ITV 注入 + 平台注入分发
   Post-Defconfig.sh  defconfig 之后的收尾（无 WiFi 变体裁剪 DEVICE_PACKAGES）
   _trim_wifi.py      Post-Defconfig 的裁剪实现
-  Packages.sh        第三方包处理（homeproxy 规则、iStore、quickstart、athena-led…）
+  Packages.sh        第三方包处理（homeproxy 规则、rtp2httpd、athena-led…）
   Inject-ITV.sh      IPTV（itv）防火墙固化
   Inject-R28S.sh     R28S 设备树 / board.d / /opt 大分区
   Inject-RT28.sh     RT28 设备树 / 交换芯片补丁 / 预编译 U-Boot（跳过 configure+compile）
@@ -107,11 +117,13 @@ target-patch/
 | ≥2 | 第一个口 wan（DHCP + DHCPv6），其余桥接进 lan，`192.168.100.1/24` + DHCP 服务器 + RA，wan 开 masq |
 
 `/etc/init.d/growroot` 首启把 p2 和 ext4 扩到整块虚拟磁盘；docker 数据在 `/opt/docker`。
-`luci-app-quickstart`（iStoreOS 首页）随固件编入，见 `Scripts/Packages.sh` 里的说明：
-只取 LuCI 部分，iStoreOS 那个 Go 守护进程不在任何 feed 里，依赖它的卡片为空。
+`luci-app-quickstart`（iStoreOS 首页）**不再编入**：它只是纯前端 SPA，接口全在
+iStoreOS 那个 Go 守护进程上（任何 feed 里都没有），为一张设置页不值得撑大固件；
+旁路由请用 `/usr/sbin/bypass-router`。`Scripts/verify-armsr.sh` 会校验它确实没进镜像。
 
 编译完 WRT-CORE 会用 `Scripts/verify-armsr.sh` 以 edk2/AAVMF 固件真跑一遍虚机
-（非阻断步骤），日志里能看到 UEFI 启动 / DHCP / 扩容 / LuCI / rtp2httpd 的检查结果。
+（**硬门禁**：镜像真启不动会直接失败、不发布 Release），日志里能看到 UEFI 启动 /
+DHCP / 扩容 / LuCI / rtp2httpd 的检查结果。
 
 
 ## IPTV / itv 说明

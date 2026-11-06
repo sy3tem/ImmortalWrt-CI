@@ -312,6 +312,31 @@ jobs:
             make clean -j$(nproc)
           fi
 
+      - name: Verify no-WiFi image
+        # 硬门禁：*-NOWIFI* 变体必须**真的**不含无线栈。
+        # 只看 .config 会误判——设备 mk 的 DEVICE_PACKAGES 被裁掉之后，
+        # .config 里仍留着 wpad-* / wifi-scripts / kmod-aic8800-* 这些 =m 行
+        # （R28S-NOWIFI 就是这种情况），但它们到底进没进镜像只有 .manifest 说了算。
+        # 所以这里直接查最终 rootfs 的装机包清单，命中任何无线包就失败、不发 Release。
+        if: env.WRT_TEST != 'true' && env.WRT_VARIANT == 'nowifi'
+        run: |
+          set -eu
+          shopt -s nullglob
+          MANS=(./wrt/upload/*.manifest)
+          [ "${#MANS[@]}" -gt 0 ] || { echo "::error::no .manifest produced"; exit 1; }
+          PAT='^(wpad|wpad-[^ ]*|kmod-mac80211[^ ]*|kmod-ath[^ ]*|ath[0-9]+k-firmware[^ ]*|wifi-scripts|kmod-aic8800[^ ]*|aic8800-[a-z]+-firmware|ipq-wifi-[^ ]*|hostapd[^ ]*|kmod-mt79[^ ]*|mt79[0-9]+-firmware) '
+          rc=0
+          for MAN in "${MANS[@]}"; do
+            echo "checking $MAN"
+            BAD=$(grep -Ei "$PAT" "$MAN" || true)
+            if [ -n "$BAD" ]; then
+              echo "$BAD"
+              echo "::error file=$MAN::no-WiFi image still ships the wireless stack"
+              rc=1
+            fi
+          done
+          [ "$rc" -eq 0 ] && echo "OK: no wireless packages in the image"
+
       - name: UEFI Boot Smoke Test (armsr)
         # 真启动验证：用真实 edk2/AAVMF UEFI 固件在 QEMU 里把刚编出的 armsr 镜像
         # 跑起来，校验 UEFI 启动 / 网卡自识别 / growroot / LuCI / 关键包都在。

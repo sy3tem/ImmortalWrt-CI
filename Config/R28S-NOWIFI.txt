@@ -1,9 +1,13 @@
 # NanoPi R28S (RK3528A) — NO WiFi (wireless stack stripped)
 # Source : immortalwrt/immortalwrt @ master (official)
-# Image  : immortalwrt-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade.img.gz
-#          (identical name; the variant is identified by the release tag)
+# Image  : immortalwrt-master-wifi-no-rockchip-armv8-friendlyarm_nanopi-r28s-
+#          squashfs-sysupgrade-<date>.img.gz
+#          上游文件名前面加了 wifi-no 段；和 wifi-yes 版同名同目录，只是不带无线栈。
 #
-# Scripts/Settings.sh disables kmod-ath/mac80211/wpad/aic8800 for *-NOWIFI*.
+# Scripts/Settings.sh disables kmod-ath/mac80211/wpad/aic8800 for *-NOWIFI*,
+# Scripts/Post-Defconfig.sh trims the device's DEVICE_PACKAGES, and the
+# WRT-CORE "Verify no-WiFi image" step greps the final .manifest so a wireless
+# package can never sneak back into this variant.
 
 #--- target ---
 CONFIG_TARGET_rockchip=y

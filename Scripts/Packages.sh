@@ -5,9 +5,11 @@
 # Almost everything lives in the OFFICIAL immortalwrt/packages + immortalwrt/luci
 # feeds already, so no vendoring is needed. This script only:
 #   - patches the few packages that need a nudge to build cleanly
-#   - pulls the two genuinely external packages:
-#       · iStore   (luci-app-store + its 3 deps)  -> linkease/istore
+#   - pulls the one genuinely external package left:
 #       · athena-led (RE-CS-02 点阵屏)             -> unraveloop/JDC-AX6600-Athena-LED-Controller
+#
+# OpenClash / iStore are intentionally NOT built any more (see Config/GENERAL.txt),
+# so neither luci-app-openclash nor linkease/istore is fetched or patched here.
 #
 # CONVENTION: this script runs with CWD = <tree>/package  (like the upstream CI),
 # so "./" is the package directory and "$GITHUB_WORKSPACE/wrt" is the tree root.
@@ -37,12 +39,9 @@ if [ -n "$HP_PATH" ]; then
 	echo "homeproxy rule data updated!"
 fi
 
-# ---- NOTE: proxy stack = OpenClash (nothing to vendor here) ------------------
-# The old passwall + xray-core stack (and the lyaml `sed` hack that used to go
-# with it) was dropped in favour of `luci-app-openclash` — see the proxy block
-# in Config/GENERAL.txt. openclash is fully self-contained in the official
-# immortalwrt/luci + immortalwrt/packages feeds, so unlike iStore / athena-led
-# it needs NO external extraction and NO Makefile patching at all.
+# ---- NOTE: no proxy stack at all --------------------------------------------
+# passwall + xray-core was dropped earlier, then luci-app-openclash went too.
+# Nothing to vendor, patch, or extract for a proxy now — keep it that way.
 
 # ---- rust: disable ci-llvm (avoids the llvm-bpf host toolchain) -------------
 RUST_FILE=$(find "$TREE_ROOT/feeds/packages/" -maxdepth 3 -type f -wholename "*/rust/Makefile" 2>/dev/null | head -1)
@@ -58,23 +57,6 @@ for D in rtp2httpd luci-app-rtp2httpd; do
 		[ -f "$BASE/$D/Makefile.versioned" ] && mv -f "$BASE/$D/Makefile.versioned" "$BASE/$D/Makefile" && echo "$D Makefile.versioned applied!"
 	done
 done
-
-# ---- iStore 应用商店 — external (linkease/istore), always -------------------
-# 官方 feeds 都没有这 4 个包, 必须从 linkease/istore 现场提取, 否则依赖不满足
-# 会被 defconfig 静默丢弃 (CONFIG_PACKAGE_luci-app-store 变成"配置残留")。
-# 依赖链: luci-app-store -> luci-lib-taskd -> luci-lib-xterm + taskd(二进制后端)
-# 其余 curl/tar/mount-utils/script-utils(=util-linux) 官方源都有。
-if [ ! -d "$PKG_PATH/luci-app-store" ]; then
-	echo " "
-	git clone -q --depth=1 --single-branch --branch "main" \
-		"https://github.com/linkease/istore.git" "$TREE_ROOT/istore-tmp"
-	cp -rf "$TREE_ROOT/istore-tmp/luci/luci-app-store" "$PKG_PATH/"
-	cp -rf "$TREE_ROOT/istore-tmp/luci/luci-lib-taskd" "$PKG_PATH/"
-	cp -rf "$TREE_ROOT/istore-tmp/luci/luci-lib-xterm" "$PKG_PATH/"
-	cp -rf "$TREE_ROOT/istore-tmp/luci/taskd" "$PKG_PATH/"
-	rm -rf "$TREE_ROOT/istore-tmp"
-	echo "iStore (luci-app-store + luci-lib-taskd + luci-lib-xterm + taskd) extracted!"
-fi
 
 # ---- luci-app-quickstart：不装 ---------------------------------------------
 # 它只是一个纯前端 SPA，所有接口都靠 iStoreOS 的 Go 守护进程；为了「网络向导」
