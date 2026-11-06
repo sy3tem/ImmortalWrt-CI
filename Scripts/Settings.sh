@@ -50,16 +50,18 @@ if [ -n "$WRT_PACKAGE" ]; then
 	echo -e "$WRT_PACKAGE" >> ./.config
 fi
 
-# ---- iStore taskd log dir + drop the 404 video feed ----
+# ---- base-files uci-defaults (shared dir for the snippets below) ----
 UDIR="./package/base-files/files/etc/uci-defaults"
 mkdir -p "$UDIR"
-cat > "$UDIR/99-fix-istore-taskd" <<'EOF'
+
+# iStore 的 taskd 日志目录修复已随 iStore 一起删除；这里只留下 apk 源清理：
+# snapshot 的 video feed 一直是 404，留着会让 `apk update` 每次报错。
+cat > "$UDIR/00-clean-apk-feeds" <<'EOF'
 #!/bin/sh
-mkdir -p /var/log/tasks
-sed -i '\#/aarch64_generic/video/packages.adb#d' /etc/apk/repositories.d/distfeeds.list 2>/dev/null
+sed -i '\#/video/packages.adb#d' /etc/apk/repositories.d/distfeeds.list 2>/dev/null
 exit 0
 EOF
-chmod +x "$UDIR/99-fix-istore-taskd"
+chmod +x "$UDIR/00-clean-apk-feeds"
 
 # ---- IPv6 relay (bridge ONT without DHCPv6-PD) ----
 cat > "$UDIR/98-ipv6-relay" <<'EOF'
