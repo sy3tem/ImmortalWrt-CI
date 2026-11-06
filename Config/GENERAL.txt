@@ -183,6 +183,12 @@ CONFIG_PACKAGE_luci-app-rtp2httpd=y
 # Must be built in-tree: a later apk install mismatches the shipped libpcap ABI.
 CONFIG_PACKAGE_tcpdump=y
 
+#--- Open-Box 面板（闭源专有，发布包随固件走，首次开机解到 /opt）---
+# 见 target-patch/openbox/：Makefile 下载校验上游 arm64 发布包，
+# /etc/init.d/open-box-firstboot 首启解包并铺 init 脚本 / LuCI / 软链。
+# 面板默认 http://<LAN IP>:3036，首次打开设置密码。
+CONFIG_PACKAGE_open-box=y
+
 #--- firewall4 / ucode helpers ---
 # 这里原先挂的是 OpenClash 的整套依赖链（luci-app-openclash + ruby + ruby-yaml
 # + dnsmasq-full + ipset/iptables-mod-* …）。代理套件已整体移除，只保留

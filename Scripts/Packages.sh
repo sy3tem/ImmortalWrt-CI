@@ -58,6 +58,17 @@ for D in rtp2httpd luci-app-rtp2httpd; do
 	done
 done
 
+# ---- open-box：闭源预编译包，固件里带 tar、首启解到 /opt --------------------
+# 上游只发 aarch64 发布包；本仓库现在只剩 ARM 实机，架构正好对上。
+# 包本体在 target-patch/openbox/：Makefile 负责下载并校验发布包，
+# /etc/init.d/open-box-firstboot 负责首次开机解到 /opt/open-box（R28S/RT28 的
+# /opt 是开机挂载的分区，镜像里没法直接铺）。
+if [ -d "$GITHUB_WORKSPACE/target-patch/openbox" ]; then
+	rm -rf "$PKG_PATH/open-box"
+	cp -rf "$GITHUB_WORKSPACE/target-patch/openbox" "$PKG_PATH/open-box"
+	echo "open-box package injected (payload shipped in image, unpacked on first boot)"
+fi
+
 # ---- luci-app-quickstart：不装 ---------------------------------------------
 # 它只是一个纯前端 SPA，所有接口都靠 iStoreOS 的 Go 守护进程；为了「网络向导」
 # 能保存而把守护进程整套塞进固件，体积和依赖都不划算，现已整体移除。

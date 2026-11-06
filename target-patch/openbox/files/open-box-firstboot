@@ -1,0 +1,84 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: MIT
+#
+# Open-Box 首次开机铺装（离线版 install.sh）。
+#
+# 固件里只带 /usr/share/open-box/payload.tar.gz（上游完整发布包），
+# 这里把它解到 /opt/open-box，再按官方 scripts/install.sh 的动作补齐：
+#   · /etc/init.d/openbox, /etc/init.d/openbox-panel
+#   · /usr/bin/open-box 软链
+#   · LuCI 视图 / menu.d / rpcd ACL
+#   · data/panel-port, data/channel
+#   · 只启用面板，不启用内核（官方也是这么做的：用户还没配置任何东西）
+#
+# 为什么不在编镜像时直接铺：
+#   R28S / RT28 的 /opt 是开机才挂载的独立分区(p3)，镜像里 /opt 下的内容会被盖住。
+#   统一走「首启解包」这条路，四台机器行为一致。
+#
+# 卸载后的行为：铺装完成会写 /etc/open-box.installed；这个文件在就不会再解包，
+# 所以用 open-box uninstall 卸掉之后重启不会又冒出来。想重新装回来：
+#   rm /etc/open-box.installed && reboot
+
+START=99
+
+PAYLOAD=/usr/share/open-box/payload.tar.gz
+DEST=/opt/open-box
+FLAG=/etc/open-box.installed
+# 解包后约 200 MB，留一点余量再判空间
+NEED_KB=260000
+
+log() { logger -t open-box "$*"; }
+
+start() {
+	[ -f "$FLAG" ] && return 0
+	[ -f "$PAYLOAD" ] || return 0
+
+	mkdir -p "$DEST" || { log "无法创建 $DEST"; return 1; }
+
+	free_kb=$(df -Pk /opt 2>/dev/null | awk 'NR==2 { print $4 }')
+	if [ -n "$free_kb" ] && [ "$free_kb" -lt "$NEED_KB" ]; then
+		log "/opt 剩余空间不足（${free_kb}KB < ${NEED_KB}KB），本次跳过，下次开机重试"
+		return 1
+	fi
+
+	log "首次开机铺装 Open-Box 到 $DEST（约 200MB，稍等）..."
+	if ! tar -xzf "$PAYLOAD" -C "$DEST"; then
+		log "解包失败，清掉半成品，下次开机重试"
+		rm -rf "$DEST"
+		return 1
+	fi
+	chown -R 0:0 "$DEST" 2>/dev/null
+
+	# 面板端口 / 升级通道（官方 install.sh 会落盘这两个文件）
+	mkdir -p "$DEST/data"
+	[ -s "$DEST/data/panel-port" ] || echo 3036 > "$DEST/data/panel-port"
+	[ -s "$DEST/data/channel" ] || echo direct > "$DEST/data/channel"
+
+	# 服务脚本
+	cp "$DEST/openwrt/initd/openbox" /etc/init.d/openbox 2>/dev/null
+	cp "$DEST/openwrt/initd/openbox-panel" /etc/init.d/openbox-panel 2>/dev/null
+	chmod +x /etc/init.d/openbox /etc/init.d/openbox-panel 2>/dev/null
+
+	# SSH 里的 open-box 命令（查面板密码 / 检查升级）
+	ln -sf "$DEST/openwrt/bin/open-box" /usr/bin/open-box 2>/dev/null
+
+	# LuCI：htdocs/ 是 /www，root/ 是 / 的覆盖层
+	mkdir -p /www/luci-static/resources/view/openbox /usr/share/luci/menu.d /usr/share/rpcd/acl.d
+	cp "$DEST"/openwrt/luci/htdocs/luci-static/resources/view/openbox/*.js \
+		/www/luci-static/resources/view/openbox/ 2>/dev/null
+	cp "$DEST"/openwrt/luci/root/usr/share/luci/menu.d/luci-app-openbox.json \
+		/usr/share/luci/menu.d/ 2>/dev/null
+	cp "$DEST"/openwrt/luci/root/usr/share/rpcd/acl.d/luci-app-openbox.json \
+		/usr/share/rpcd/acl.d/ 2>/dev/null
+	rm -rf /tmp/luci-*cache* 2>/dev/null
+
+	# 照官方：只启用面板，内核等用户点了才起
+	rm -f /etc/rc.d/S*openbox 2>/dev/null
+	/etc/init.d/openbox-panel enable >/dev/null 2>&1
+	/etc/init.d/rpcd restart >/dev/null 2>&1
+	/etc/init.d/openbox-panel restart >/dev/null 2>&1
+
+	touch "$FLAG"
+	log "Open-Box 铺装完成，面板端口 $(cat "$DEST/data/panel-port" 2>/dev/null)"
+	return 0
+}
