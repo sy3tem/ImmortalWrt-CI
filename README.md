@@ -119,8 +119,12 @@ target-patch/
 
 - 面板 `http://<LAN IP>:3036`，首次打开设置密码；LuCI「服务 → Open-Box」是兜底页。
 - 只启用**面板**服务，内核（sing-box）不随开机启动，和官方 `install.sh` 一致。
-- 卸载：`open-box uninstall`。卸载后重启不会自动装回来；想装回去删
-  `/etc/open-box.installed` 再重启即可。
+- 卸载：`open-box uninstall`。卸载后重启不会自动装回来（固件里的压缩包在首次铺装
+  成功后已经删掉；要再装就按官方文档联网跑一次 `install.sh`）。
+- **菜单会自己注册**：LuCI 24.10 的入口是 `/usr/share/luci/menu.d/luci-app-openbox.json`
+  + `/www/luci-static/resources/view/openbox/*.js` + `/usr/share/rpcd/acl.d/…` 三件套，
+  铺完会 `rpcd restart`，不用重启路由器就能在「服务 → Open-Box」看到页面；
+  缺文件时 `logread -e open-box` 里会有明确警告。
 - 依赖（`kmod-tun` / `kmod-nft-queue` / `kmod-nft-nat` / `kmod-veth` / `ip-full` /
   `ca-bundle`）都已在 `Config/GENERAL.txt` 里，包本身也声明了。
 
