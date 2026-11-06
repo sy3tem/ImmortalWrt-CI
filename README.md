@@ -96,7 +96,37 @@ target-patch/
   itv/               itv zone（firewall 片段）+ uci-defaults + hotplug
   r28s/              rk3528-nanopi-r28s.dts、设备 mk 片段、/opt init.d
   rt28/              RT28 dts / bootscript / 内核补丁 / 预编译 U-Boot / board.d
+  openbox/           Open-Box 预编译包（Makefile）+ 首启解包脚本
 ```
+
+## Open-Box（闭源，随固件预装）
+
+`target-patch/openbox/` 是一个「只搬运、不编译」的包：
+
+- **Makefile** 从 `liandu2024/Open-Box` 的 Release 下 `open-box-v0.1.412-linux-arm64.tar.gz`，
+  用 `.sha256` 里的值 pin 了 `PKG_HASH`；版本升级就是改 `PKG_VERSION` / `PKG_HASH`。
+  下载走 GitHub，失败自动回落到 `gh-proxy.com` 镜像。
+- 发布包（约 73 MB，解包后约 200 MB）原样放进 `/usr/share/open-box/payload.tar.gz`。
+- `/etc/init.d/open-box-firstboot`（S99）**首次开机**解到 `/opt/open-box`，再做官方
+  `install.sh` 那几步：铺 `/etc/init.d/openbox{,-panel}`、`/usr/bin/open-box` 软链、
+  LuCI 视图 + `menu.d` + `rpcd` ACL、`data/panel-port`（3036）和 `data/channel`。
+  完成后写 `/etc/open-box.installed`，之后开机不再重复解包。
+
+为什么不编进镜像：**R28S / RT28 的 `/opt` 是开机才挂载的独立分区(p3)**，镜像里 `/opt`
+下的内容会被挂载盖掉，所以四台机器统一走「首启解包」。
+
+用法：
+
+- 面板 `http://<LAN IP>:3036`，首次打开设置密码；LuCI「服务 → Open-Box」是兜底页。
+- 只启用**面板**服务，内核（sing-box）不随开机启动，和官方 `install.sh` 一致。
+- 卸载：`open-box uninstall`。卸载后重启不会自动装回来；想装回去删
+  `/etc/open-box.installed` 再重启即可。
+- 依赖（`kmod-tun` / `kmod-nft-queue` / `kmod-nft-nat` / `kmod-veth` / `ip-full` /
+  `ca-bundle`）都已在 `Config/GENERAL.txt` 里，包本身也声明了。
+
+> ⚠ **授权**：Open-Box 自有程序是闭源专有软件，其 LICENSE 明确禁止未经许可的复制、
+> 传播与再分发。把发布包打进固件、再把固件发到公开 Release，等于在再分发它；
+> 要公开发布请先确认自己拿到了授权，或把仓库 / Release 设为私有。
 
 ## 范围
 
