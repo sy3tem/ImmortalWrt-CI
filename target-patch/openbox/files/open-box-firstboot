@@ -16,8 +16,8 @@
 #   统一走「首启解包」这条路，四台机器行为一致。
 #
 # 卸载后的行为：铺装完成会写 /etc/open-box.installed；这个文件在就不会再解包，
-# 所以用 open-box uninstall 卸掉之后重启不会又冒出来。想重新装回来：
-#   rm /etc/open-box.installed && reboot
+# 所以用 open-box uninstall 卸掉之后重启不会又冒出来。
+# （固件里的压缩包在铺装成功后会被删掉，想再装回来就直接跑官方 install.sh 联网装。）
 
 START=99
 
@@ -62,7 +62,9 @@ start() {
 	# SSH 里的 open-box 命令（查面板密码 / 检查升级）
 	ln -sf "$DEST/openwrt/bin/open-box" /usr/bin/open-box 2>/dev/null
 
-	# LuCI：htdocs/ 是 /www，root/ 是 / 的覆盖层
+	# LuCI：htdocs/ 是 /www，root/ 是 / 的覆盖层。
+	# 菜单在 LuCI 24.10 里就是 menu.d 的 JSON + 视图 JS + rpcd ACL 三件套，
+	# 缺一个都是"装好了但没入口"，所以铺完逐个确认，缺了要在日志里喊出来。
 	mkdir -p /www/luci-static/resources/view/openbox /usr/share/luci/menu.d /usr/share/rpcd/acl.d
 	cp "$DEST"/openwrt/luci/htdocs/luci-static/resources/view/openbox/*.js \
 		/www/luci-static/resources/view/openbox/ 2>/dev/null
@@ -72,11 +74,23 @@ start() {
 		/usr/share/rpcd/acl.d/ 2>/dev/null
 	rm -rf /tmp/luci-*cache* 2>/dev/null
 
+	if [ ! -s /usr/share/luci/menu.d/luci-app-openbox.json ]; then
+		log "警告：menu.d 菜单文件没铺上，LuCI 里不会有「服务 → Open-Box」入口"
+	fi
+	if ! ls /www/luci-static/resources/view/openbox/*.js >/dev/null 2>&1; then
+		log "警告：LuCI 视图 JS 没铺上，菜单点进去会白屏"
+	fi
+
 	# 照官方：只启用面板，内核等用户点了才起
 	rm -f /etc/rc.d/S*openbox 2>/dev/null
 	/etc/init.d/openbox-panel enable >/dev/null 2>&1
 	/etc/init.d/rpcd restart >/dev/null 2>&1
 	/etc/init.d/openbox-panel restart >/dev/null 2>&1
+
+	# 铺完就把固件里的压缩包删掉。注意：/usr/share 在 squashfs 上，运行时 rm 只是
+	# 盖一层 whiteout，**不会回收那 ~73MB**（镜像编出来多大就是多大）；真要省空间
+	# 只能编译时不带 payload。这里删掉是为了不在系统里留一个 73MB 的"垃圾文件"。
+	rm -f "$PAYLOAD"
 
 	touch "$FLAG"
 	log "Open-Box 铺装完成，面板端口 $(cat "$DEST/data/panel-port" 2>/dev/null)"
