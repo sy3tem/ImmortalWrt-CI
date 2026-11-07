@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Daily housekeeping.
-#
-# NOTE on releases_keep_latest: every CONFIG produces its OWN release (one tag
-# per config per run), so this number is GLOBAL across all configs — it must be
-# at least the number of configs (7) to avoid deleting other devices' releases.
-# Keep ~2 rounds of headroom.
+# 每天清理一次：编译记录每个 workflow 只留最后一次成功的，Release 只留最新的一份。
 
 name: Auto-Clean
 
@@ -19,12 +14,37 @@ jobs:
   auto_clean:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete old Releases and Workflows
-        uses: ophub/delete-releases-workflows@main
-        with:
-          gh_token: ${{secrets.GITHUB_TOKEN}}
-          delete_releases: true
-          releases_keep_latest: 14
-          delete_tags: true
-          delete_workflows: true
-          workflows_keep_day: 3
+      - name: 编译记录只留最后一次成功
+        env:
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: |
+          set -uo pipefail
+          repo="$GITHUB_REPOSITORY"
+          for wf in $(gh api "repos/$repo/actions/workflows?per_page=100" --jq '.workflows[].id'); do
+            keep=$(gh api "repos/$repo/actions/workflows/$wf/runs?status=success&per_page=1" --jq '.workflow_runs[0].id // empty')
+            [ -z "$keep" ] && keep=0
+            echo "workflow $wf: 保留 $keep"
+            gh api "repos/$repo/actions/workflows/$wf/runs?per_page=100" --paginate \
+              --jq '.workflow_runs[] | "\(.id)\t\(.status)"' |
+            while IFS=$'\t' read -r id st; do
+              [ "$id" = "$keep" ] && continue
+              case "$st" in in_progress|queued|requested|waiting|pending) continue;; esac
+              gh api -X DELETE "repos/$repo/actions/runs/$id" >/dev/null && echo "  删除 run $id ($st)"
+            done
+          done
+
+      - name: Release 只留最新
+        env:
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: |
+          set -uo pipefail
+          repo="$GITHUB_REPOSITORY"
+          newest=$(gh api "repos/$repo/releases?per_page=1" --jq '.[0].id // empty')
+          if [ -z "$newest" ]; then echo "没有 release"; exit 0; fi
+          echo "保留 release $newest"
+          gh api "repos/$repo/releases?per_page=100" --jq '.[] | "\(.id)\t\(.tag_name)"' |
+          while IFS=$'\t' read -r id tag; do
+            [ "$id" = "$newest" ] && continue
+            gh api -X DELETE "repos/$repo/releases/$id" >/dev/null && echo "  删除 release $tag"
+            gh api -X DELETE "repos/$repo/git/refs/tags/$tag" >/dev/null 2>&1 || true
+          done
