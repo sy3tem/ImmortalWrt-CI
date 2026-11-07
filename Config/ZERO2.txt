@@ -1,0 +1,55 @@
+# NanoPi Zero2 (RK3528A) — 单网口 / 无板载 WiFi
+# Source : immortalwrt/immortalwrt @ master (official)
+# Image  : immortalwrt-rockchip-armv8-friendlyarm_nanopi-zero2-squashfs-sysupgrade.img.gz
+
+#--- target ---
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_friendlyarm_nanopi-zero2=y
+
+#=====================================================================
+# Zero2 与 R28S 的硬件差异:
+#   Zero2 : 单网口 gmac1(RGMII->RTL8211F), LED x2(SYS/LED1), 无板载WiFi
+#           WiFi 走 M.2 Key-E (PCIe2.1), 需自插 RTL8822CE 模块
+#   R28S  : 双网口(gmac1 + RTL8111H PCIe), LED x3, 板载 AIC8800(SDIO)
+# 因此: 不引入 kmod-r8169(RTL8111H 专用) / kmod-aic8800-sdio(板载WiFi专用)
+#=====================================================================
+
+#--- WiFi: 不接无线模块，不编任何 WiFi 驱动/固件/管理组件 ---
+# 上游设备定义默认带的 kmod-rtw88-8822ce / wpad-openssl / wifi-scripts 全部关掉，
+# 否则镜像里会留一堆用不上的固件与服务。
+CONFIG_PACKAGE_kmod-rtw88-8822ce=n
+CONFIG_PACKAGE_wpad-openssl=n
+CONFIG_PACKAGE_wifi-scripts=n
+# 确保无线相关组件不被间接拉起
+CONFIG_PACKAGE_wpad-basic-mbedtls=n
+CONFIG_PACKAGE_wpad-basic-openssl=n
+CONFIG_PACKAGE_wpad-full-mbedtls=n
+CONFIG_PACKAGE_wpad-full-openssl=n
+CONFIG_PACKAGE_kmod-cfg80211=n
+CONFIG_PACKAGE_kmod-mac80211=n
+CONFIG_PACKAGE_kmod-nl80211=n
+CONFIG_PACKAGE_iw=n
+CONFIG_PACKAGE_iwinfo=n
+
+#--- partition layout ---
+# boot 128MB(内核+dtb) / rootfs 1024MB
+# rootfs 保持 1024MB: Open-Box 的 200MB 组件不打进 rootfs，
+# 而是随固件带 tar 包，首启由 /etc/init.d/open-box-firstboot 解到 /opt 大分区。
+CONFIG_TARGET_KERNEL_PARTSIZE=128
+CONFIG_TARGET_ROOTFS_PARTSIZE=1024
+CONFIG_TARGET_ROOTFS_EXT4FS=n
+
+#--- Open-Box 运行依赖 ---
+# 包本体由 GENERAL.txt 的 CONFIG_PACKAGE_open-box=y 引入（payload 随固件走），
+# 这里显式列出它依赖的内核模块与工具，避免 kconfig 因别处 =n 而丢掉。
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_kmod-nft-queue=y
+CONFIG_PACKAGE_kmod-nft-nat=y
+CONFIG_PACKAGE_kmod-veth=y
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_ca-bundle=y
+# nftables 基础(Open-Box 用 nft 做入口旁路与 DNS 劫持)
+CONFIG_PACKAGE_nftables-json=y
+CONFIG_PACKAGE_kmod-nf-nathelper=y
+CONFIG_PACKAGE_kmod-nf-nathelper-extra=y

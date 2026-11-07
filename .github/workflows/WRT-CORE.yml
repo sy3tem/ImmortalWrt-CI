@@ -141,17 +141,18 @@ jobs:
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
-          # 文件名里的 wifi 段：*-NOWIFI* 变体 wifi-no，其余（R28S / RT28 / 亚瑟 / 雅典娜）wifi-yes
+          # 文件名里的 wifi 段：*-NOWIFI* / ZERO2（无板载无线）为 wifi-no，
+          # 其余（R28S-WIFI / RT28 / 亚瑟 / 雅典娜）wifi-yes
           case "${WRT_CONFIG^^}" in
-            *NOWIFI*) echo "WRT_WIFI=wifi-no"  >> $GITHUB_ENV ;;
-            *)        echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV ;;
+            *NOWIFI*|*ZERO2*) echo "WRT_WIFI=wifi-no"  >> $GITHUB_ENV ;;
+            *)                echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV ;;
           esac
 
           # variant marker used in the release tag only (files keep upstream names)
           case "${WRT_CONFIG^^}" in
-            *NOWIFI*) echo "WRT_VARIANT=nowifi" >> $GITHUB_ENV ;;
-            *FULL*)   echo "WRT_VARIANT=full"   >> $GITHUB_ENV ;;
-            *)        echo "WRT_VARIANT=base"   >> $GITHUB_ENV ;;
+            *NOWIFI*|*ZERO2*) echo "WRT_VARIANT=nowifi" >> $GITHUB_ENV ;;
+            *FULL*)           echo "WRT_VARIANT=full"   >> $GITHUB_ENV ;;
+            *)                echo "WRT_VARIANT=base"   >> $GITHUB_ENV ;;
           esac
 
       - name: Clone Code

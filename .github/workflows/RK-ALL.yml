@@ -3,6 +3,7 @@
 #
 # Devices : NanoPi R28S  (nanopi-r28s)   — Wi-Fi / no-Wi-Fi variants
 #           Hugsun RT28  (hugsun_rt28)   — 4-port + MT7916 Wi-Fi (single image)
+#           NanoPi Zero2 (nanopi-zero2)  — single GbE, no onboard Wi-Fi
 # Source  : immortalwrt/immortalwrt @ master
 
 name: RK-ALL
@@ -36,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        CONFIG: ${{ fromJSON(inputs.CONFIGS || '["R28S-WIFI", "R28S-NOWIFI", "RT28"]') }}
+        CONFIG: ${{ fromJSON(inputs.CONFIGS || '["R28S-WIFI", "R28S-NOWIFI", "RT28", "ZERO2"]') }}
         SOURCE: [immortalwrt/immortalwrt]
         BRANCH: [master]
 
