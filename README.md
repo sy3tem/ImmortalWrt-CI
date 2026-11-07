@@ -109,13 +109,22 @@ R28S / RT28 / 亚瑟 / 雅典娜 的 eMMC 上都有（或被我们造出）一�
 |---|---|---|
 | R28S | p3（镜像里预留，首启扩容） | `target-patch/r28s/opt-partition/99-auto-resize-and-mount-opt` |
 | RT28 | p3（首启从 1280 MB 起分） | `target-patch/rt28/base-files/init.d/opt-mount` |
-| 亚瑟 / 雅典娜 | p19（出厂就有，约 110 GiB ext4） | `target-patch/jdcloud/opt-partition/99-mount-opt` |
+| 亚瑟 / 雅典娜 | 有就用现成的 p19；没有就现建一个 | `target-patch/jdcloud/opt-partition/99-mount-opt` |
 
 京东云这两台的坑在于：官方 fstab 里没有这块分区，`block-mount` 的 automount 会把它
 挂到 `/mnt/mmcblk0p19`，于是 `/opt` 一直落在 1.9 GiB 的 overlay 上 —— Open-Box 解包
 （174 MB）和 docker 数据全挤进去，overlay 一满就什么都存不下。`99-mount-opt` 在首次
-开机时（S10boot，早于 S11fstab 和所有服务）写一条 `fstab → /opt`，并把 overlay 上
-已有的 `/opt` 内容搬到数据分区；之后每次开机由 fstab 挂载。
+开机时（S10boot，早于 S11fstab 和所有服务）做三件事：
+
+1. **找**：eMMC 上 ≥ 4 GiB 的 ext4 分区直接拿来用（2 G 的 rootfs `p18` 天然被排除）；
+2. **建**：一个都没有时（从**原厂固件**刷过来的机器就是这种，原厂分区表里没有 p19），
+   取最后一个分区之后的空闲空间补一个 GPT 分区（类型 `0FC63DAF…`，1 MiB 对齐），
+   `partx -a` 让内核认出来，再 `mkfs.ext4 -L opt`；空闲不足 4 GiB 就放弃、不影响开机；
+3. **挂**：写一条 `fstab → /opt` 并启用，把 overlay 上已有的 `/opt` 内容搬进去
+   （校验通过才删旧副本），顺手摘掉可能存在的 `/mnt` automount。
+
+之后每次开机由 fstab 挂载。创建分区那条路径用 loop 设备实测过（空 GPT / 只有一个小分区的
+GPT 两种布局都能正确补出分区并格式化），真机走的是「已有 p19」那条。
 
 > 已经刷过旧固件、`/opt` 还留在 overlay 上的机器，要么重刷带这个脚本的版本，要么手工迁一次：
 > 备份 `/opt` → 停 `dockerd`/`openbox-panel` → 内容拷到数据分区 → `uci` 把该分区的 fstab

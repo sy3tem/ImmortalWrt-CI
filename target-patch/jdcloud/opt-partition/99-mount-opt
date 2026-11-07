@@ -5,107 +5,187 @@
 #
 # 京东云 亚瑟(RE-SS-01) / 雅典娜(RE-CS-02)：把 eMMC 上的大数据分区挂到 /opt。
 #
-# 背景：这两台的 eMMC 上有一个 ~110G 的 ext4 数据分区（本机实测是 mmcblk0p19）。
-# 官方 fstab 里没有它，于是 block-mount 的 automount 把它挂到 /mnt/mmcblk0p19，
-# /opt 就一直留在 1.9G 的 overlay 上 —— open-box(174M)、docker 数据全挤进去，
-# overlay 满了就什么配置都存不下。
+# 两种来路都要能处理：
+#   1) 从本仓库的固件升级上来 / 已经刷过带数据分区的版本 —— eMMC 上已有 p19 这块
+#      ~110G 的 ext4，直接用它；
+#   2) 从原厂固件刷过来 —— 原厂分区表里没有这块，eMMC 尾部是空闲空间，
+#      这里自己补一个分区并 mkfs.ext4。
+#
+# 为什么要做：官方 fstab 里没有这块分区，block-mount 的 automount 会把它挂到
+# /mnt/mmcblk0p19；/opt 就一直留在 1.9G 的 overlay 上 —— open-box(174M)、docker
+# 数据全挤进去，overlay 满了什么都存不下。
 #
 # 做法与 R28S 的 target-patch/r28s/opt-partition/99-auto-resize-and-mount-opt 一致：
-# 写一条 fstab 条目把数据分区挂到 /opt，剩下交给 S11fstab 在开机时挂载。
-# 与 R28S 的差别：这里的分区出厂就已经存在、也是 ext4，不需要 mkfs / 扩容。
+# 写好 fstab → /opt，剩下的交给 S11fstab 在开机时挂。区别是这里的分区可能要先建。
 #
 # 只跑一次（uci-defaults 成功后自己删除）。任何一步失败都 exit 0：
-# /opt 留在 overlay 上只是空间小，不值得把开机卡死。
+# /opt 留在 overlay 上只是空间小，不值得把开机搞挂。
 
 . /lib/functions/uci-defaults.sh 2>/dev/null
 
+MIN_SECT=$((4 * 1024 * 1024 * 2))   # 4 GiB，单位 = 512B 扇区
+GPT_LINUX_GUID=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+DISK=${OPT_DISK:-/dev/mmcblk0}
+
 log() { logger -t opt-partition "$*"; }
 
-# 512-byte sectors per MiB；只认 >= 4 GiB 的 ext4 分区
-# （rootfs 所在的 p18 是 2G，其余分区都是几十 M，天然被排除）
-MIN_SECT=$((4 * 1024 * 1024 * 2))
+disk_name() { basename "$DISK"; }
+disk_sectors() { cat "/sys/class/block/$(disk_name)/size" 2>/dev/null; }
+disk_pttype() { blkid -o value -s PTTYPE "$DISK" 2>/dev/null; }
 
-BEST=""
-BEST_SZ=0
-for p in /dev/mmcblk0p*; do
-	[ -b "$p" ] || continue
-	[ "$(blkid -o value -s TYPE "$p" 2>/dev/null)" = "ext4" ] || continue
-	sz=$(cat "/sys/class/block/${p##*/}/size" 2>/dev/null) || continue
-	[ "${sz:-0}" -ge "$MIN_SECT" ] || continue
-	if [ "$sz" -gt "$BEST_SZ" ]; then
-		BEST="$p"
-		BEST_SZ="$sz"
+# 分区表里最后一个分区的结束扇区（+1）
+last_end() {
+	sfdisk -d "$DISK" 2>/dev/null | \
+		sed -n 's/.*start=[ ]*\([0-9]*\), size=[ ]*\([0-9]*\).*/\1 \2/p' | \
+		awk '{ if ($1 + $2 > m) m = $1 + $2 } END { print m + 0 }'
+}
+
+part_size() { cat "/sys/class/block/$(basename "$1")/size" 2>/dev/null; }
+
+# 已有的大 ext4 数据分区（>= 4 GiB），没有就输出空
+find_data_part() {
+	best=""
+	best_sz=0
+	for p in "${DISK}"p*; do
+		[ -b "$p" ] || continue
+		[ "$(blkid -o value -s TYPE "$p" 2>/dev/null)" = "ext4" ] || continue
+		sz=$(part_size "$p") || continue
+		[ "${sz:-0}" -ge "$MIN_SECT" ] || continue
+		if [ "$sz" -gt "$best_sz" ]; then best="$p"; best_sz="$sz"; fi
+	done
+	echo "$best"
+}
+
+# 在空闲空间里补一个分区并格式化；成功输出新设备名
+create_data_part() {
+	command -v sfdisk >/dev/null 2>&1 || { log "缺 sfdisk，无法建分区"; return 1; }
+	command -v mkfs.ext4 >/dev/null 2>&1 || { log "缺 mkfs.ext4，无法建分区"; return 1; }
+
+	total=$(disk_sectors)
+	[ -n "$total" ] || { log "读不到 $DISK 容量"; return 1; }
+
+	# GPT 末尾要留 34 个扇区给 backup header + entries
+	end=$(last_end)
+	case "$(disk_pttype)" in
+	gpt|GPT) reserve=34 ;;
+	*)       reserve=0 ;;
+	esac
+
+	start=$((end + 1))
+	# 对齐到 1 MiB（所有分区起点都是 2048 的倍数），空盘时也别从 1 号扇区开始
+	if [ "$start" -lt 2048 ]; then start=2048; fi
+	free=$((total - start - reserve))
+	if [ "$free" -lt "$MIN_SECT" ]; then
+		log "$DISK 尾部空闲不足 4GiB（$((free / 2048)) MiB），不建分区"
+		return 1
 	fi
-done
 
-if [ -z "$BEST" ]; then
-	log "没有找到 >=4GiB 的 ext4 数据分区，/opt 继续留在 overlay"
-	exit 0
-fi
+	case "$(disk_pttype)" in
+	gpt|GPT) type="$GPT_LINUX_GUID" ;;
+	*)       type=83 ;;
+	esac
 
-UUID=$(blkid -o value -s UUID "$BEST" 2>/dev/null)
-[ -n "$UUID" ] || { log "$BEST 没有 UUID，跳过"; exit 0; }
-
-log "数据分区 $BEST (UUID=$UUID), $((BEST_SZ / 2048 / 1024)) GiB"
-
-# ---- 1) fstab：已有该 uuid 的条目就改目标，没有就加一条 ------------------------
-IDX=""
-i=0
-while uci -q get "fstab.@mount[$i]" >/dev/null 2>&1; do
-	if [ "$(uci -q get "fstab.@mount[$i].uuid")" = "$UUID" ]; then
-		IDX="$i"
-		break
+	log "在 $DISK 上新建分区: start=$start size=$free type=$type"
+	if ! printf 'start=%s, size=%s, type=%s, name="opt"\n' "$start" "$free" "$type" | \
+		sfdisk --append "$DISK" >/dev/null 2>&1; then
+		log "sfdisk --append 失败"
+		return 1
 	fi
-	i=$((i + 1))
-done
 
-if [ -n "$IDX" ]; then
-	uci set "fstab.@mount[$IDX].target=/opt"
-	uci set "fstab.@mount[$IDX].enabled=1"
-else
-	uci add fstab mount >/dev/null
-	uci set "fstab.@mount[-1].uuid=$UUID"
-	uci set "fstab.@mount[-1].target=/opt"
-	uci set "fstab.@mount[-1].enabled=1"
-fi
-uci commit fstab || { log "fstab 写入失败，/opt 继续留在 overlay"; exit 0; }
-log "fstab: $UUID -> /opt"
+	NUM=$(sfdisk -d "$DISK" 2>/dev/null | sed -n 's|^/dev/.*p\([0-9]*\) *:.*|\1|p' | sort -n | tail -1)
+	[ -n "$NUM" ] || { log "建完分区读不到分区号"; return 1; }
+	NEW="${DISK}p${NUM}"
 
-# ---- 2) 把 overlay 上的 /opt 内容搬进数据分区（升级上来的机器才有东西搬）-------
-# 刷新固件时 /opt 基本是空的，这一整段直接跳过。
-if [ -n "$(ls -A /opt 2>/dev/null)" ] && ! mountpoint -q /opt 2>/dev/null; then
-	TMP=/mnt/.opt-migrate
-	mkdir -p "$TMP" && mount "$BEST" "$TMP" 2>/dev/null
-	if mountpoint -q "$TMP" 2>/dev/null; then
-		log "把 /opt 现有内容搬到 $BEST（可能要一会儿）"
-		ok=1
-		for d in /opt/*; do
-			[ -e "$d" ] || continue
-			base=$(basename "$d")
-			# 不碰数据分区里已有的同名目录以外的东西（lost+found 之类）
-			[ "$base" = "lost+found" ] && continue
-			cp -a "$d" "$TMP/" 2>/dev/null || ok=0
-			[ -e "$TMP/$base" ] || ok=0
-		done
-		sync
-		umount "$TMP" 2>/dev/null
-		rmdir "$TMP" 2>/dev/null
-		# 全部确实落到数据分区之后，才删 overlay 里的旧副本，省出 overlay 空间
-		if [ "$ok" = "1" ]; then
-			rm -rf /overlay/upper/opt/* 2>/dev/null
-			log "迁移完成，overlay 上的旧副本已删除"
-		else
-			log "有文件没搬成功，overlay 上的副本保留（重启后 /opt 仍挂数据分区，旧副本不再可见）"
+	# 让内核认这块新分区（不重读整张表，根分区还挂着）
+	partx -a -n "$NUM" "$DISK" >/dev/null 2>&1 || \
+		blockdev --rereadpt "$DISK" >/dev/null 2>&1 || true
+
+	i=0
+	while [ ! -b "$NEW" ] && [ "$i" -lt 10 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	if [ ! -b "$NEW" ]; then
+		# 没有 devtmpfs/mdev 时节点可能没自动建出来，按 sysfs 里的 major:minor 补
+		majmin=$(cat "/sys/class/block/$(basename "$NEW")/dev" 2>/dev/null)
+		[ -n "$majmin" ] && mknod "$NEW" b "${majmin%%:*}" "${majmin##*:}" 2>/dev/null
+		sleep 1
+	fi
+	[ -b "$NEW" ] || { log "分区节点 $NEW 没出现"; return 1; }
+
+	if ! mkfs.ext4 -F -L opt "$NEW" >/dev/null 2>&1; then
+		log "mkfs.ext4 $NEW 失败"
+		return 1
+	fi
+	log "已创建 $NEW ($((free / 2048 / 1024)) GiB, label=opt)"
+	echo "$NEW"
+}
+
+main() {
+	BEST=$(find_data_part)
+	if [ -z "$BEST" ]; then
+		log "$DISK 上没有 >=4GiB 的 ext4 数据分区，尝试新建"
+		BEST=$(create_data_part)
+	fi
+	[ -n "$BEST" ] || { log "没有可用的数据分区，/opt 继续留在 overlay"; return 0; }
+
+	UUID=$(blkid -o value -s UUID "$BEST" 2>/dev/null)
+	[ -n "$UUID" ] || { log "$BEST 没有 UUID，跳过"; return 0; }
+	log "数据分区 $BEST (UUID=$UUID)"
+
+	# ---- 1) fstab：已有该 uuid 的条目就改目标，没有就加一条 ----
+	IDX=""
+	i=0
+	while uci -q get "fstab.@mount[$i]" >/dev/null 2>&1; do
+		if [ "$(uci -q get "fstab.@mount[$i].uuid")" = "$UUID" ]; then IDX="$i"; break; fi
+		i=$((i + 1))
+	done
+	if [ -n "$IDX" ]; then
+		uci set "fstab.@mount[$IDX].target=/opt"
+		uci set "fstab.@mount[$IDX].enabled=1"
+	else
+		uci add fstab mount >/dev/null
+		uci set "fstab.@mount[-1].uuid=$UUID"
+		uci set "fstab.@mount[-1].target=/opt"
+		uci set "fstab.@mount[-1].enabled=1"
+	fi
+	uci commit fstab || { log "fstab 写入失败"; return 0; }
+	log "fstab: $UUID -> /opt"
+
+	# ---- 2) 把 overlay 上的 /opt 内容搬进数据分区（升级上来的机器才有东西搬）----
+	if [ -n "$(ls -A /opt 2>/dev/null)" ] && ! mountpoint -q /opt 2>/dev/null; then
+		TMP=/mnt/.opt-migrate
+		mkdir -p "$TMP" && mount "$BEST" "$TMP" 2>/dev/null
+		if mountpoint -q "$TMP" 2>/dev/null; then
+			log "把 /opt 现有内容搬到 $BEST（可能要一会儿）"
+			ok=1
+			for d in /opt/*; do
+				[ -e "$d" ] || continue
+				base=$(basename "$d")
+				[ "$base" = "lost+found" ] && continue
+				cp -a "$d" "$TMP/" 2>/dev/null || ok=0
+				[ -e "$TMP/$base" ] || ok=0
+			done
+			sync
+			umount "$TMP" 2>/dev/null
+			rmdir "$TMP" 2>/dev/null
+			if [ "$ok" = "1" ]; then
+				rm -rf /overlay/upper/opt/* 2>/dev/null
+				log "迁移完成，overlay 上的旧副本已删除"
+			else
+				log "有文件没搬成功，overlay 上的副本保留"
+			fi
 		fi
 	fi
-fi
 
-# ---- 3) 如果这块分区已经被 automount 挂到别处（/mnt/...），先摘下来 -------------
-# 正常情况下 S10 时还没挂，但 block hotplug 有可能抢在前面。
-awk -v dev="$BEST" '$1 == dev { print $2 }' /proc/mounts 2>/dev/null | while read -r mp; do
-	[ "$mp" = "/opt" ] && continue
-	umount "$mp" 2>/dev/null && log "已从 $mp 摘掉 $BEST"
-done
+	# ---- 3) 万一已经被 automount 挂到别处（/mnt/...），先摘掉 ----
+	awk -v dev="$BEST" '$1 == dev { print $2 }' /proc/mounts 2>/dev/null | while read -r mp; do
+		[ "$mp" = "/opt" ] && continue
+		umount "$mp" 2>/dev/null && log "已从 $mp 摘掉 $BEST"
+	done
 
-# fstab 的 S11fstab 会在本次开机里把 $BEST 挂到 /opt（我们的脚本在 S10boot 里跑）
-exit 0
+	# fstab 的 S11fstab 会在本次开机里把它挂到 /opt（本脚本跑在 S10boot）
+	return 0
+}
+
+[ "${OPT_LIB:-0}" = "1" ] || main
