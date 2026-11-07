@@ -25,9 +25,32 @@
 
 MIN_SECT=$((4 * 1024 * 1024 * 2))   # 4 GiB，单位 = 512B 扇区
 GPT_LINUX_GUID=0FC63DAF-8483-4772-8E79-3D69D8477DE4
-DISK=${OPT_DISK:-/dev/mmcblk0}
 
 log() { logger -t opt-partition "$*"; }
+
+# 找出系统盘：优先用 cmdline 里 root=PARTUUID=... 对应的那块盘的整盘设备，
+# 找不到再退回第一块 mmcblk/sd（亚瑟、雅典娜都是 /dev/mmcblk0，这里不写死）
+detect_disk() {
+	rootuuid=$(tr ' ' '\n' < /proc/cmdline 2>/dev/null | sed -n 's/^root=PARTUUID=//p' | head -1)
+	if [ -n "$rootuuid" ]; then
+		for p in /dev/mmcblk*p[0-9]* /dev/sd?[0-9]* /dev/nvme*n*p[0-9]*; do
+			[ -b "$p" ] || continue
+			[ "$(blkid -o value -s PARTUUID "$p" 2>/dev/null)" = "$rootuuid" ] || continue
+			case "$p" in
+			*mmcblk*p[0-9]*) echo "${p%p*}"; return 0 ;;
+			/dev/nvme*)      echo "${p%p[0-9]*}"; return 0 ;;
+			*)               echo "$(echo "$p" | sed -E 's/p?[0-9]+$//')"; return 0 ;;
+			esac
+		done
+	fi
+	for d in /sys/block/mmcblk* /sys/block/sd*; do
+		case "$(basename "$d")" in *boot*|*rpmb*) continue ;; esac
+		[ -b "/dev/$(basename "$d")" ] && { echo "/dev/$(basename "$d")"; return 0; }
+	done
+	echo /dev/mmcblk0
+}
+
+DISK=${OPT_DISK:-$(detect_disk)}
 
 disk_name() { basename "$DISK"; }
 disk_sectors() { cat "/sys/class/block/$(disk_name)/size" 2>/dev/null; }
@@ -53,6 +76,27 @@ find_data_part() {
 		[ "${sz:-0}" -ge "$MIN_SECT" ] || continue
 		if [ "$sz" -gt "$best_sz" ]; then best="$p"; best_sz="$sz"; fi
 	done
+	echo "$best"
+}
+
+# 有 ≥4GiB、但还没格式化的分区（原厂有时会留一块空的分区），格成 ext4 拿来用
+claim_blank_part() {
+	command -v mkfs.ext4 >/dev/null 2>&1 || { log "缺 mkfs.ext4，跳过未格式化分区"; return 1; }
+	best=""
+	best_sz=0
+	for p in "${DISK}"p*; do
+		[ -b "$p" ] || continue
+		# 已有文件系统的一律不碰
+		[ -n "$(blkid -o value -s TYPE "$p" 2>/dev/null)" ] && continue
+		sz=$(part_size "$p") || continue
+		[ "${sz:-0}" -ge "$MIN_SECT" ] || continue
+		# 还挂着的当然不碰
+		awk -v dev="$p" '$1 == dev { f=1 } END { exit !f }' /proc/mounts && continue
+		if [ "$sz" -gt "$best_sz" ]; then best="$p"; best_sz="$sz"; fi
+	done
+	[ -n "$best" ] || return 1
+	log "发现未格式化的 $best（$((best_sz / 2048 / 1024)) GiB），格式化成 ext4 label=opt"
+	mkfs.ext4 -F -L opt "$best" >/dev/null 2>&1 || { log "mkfs.ext4 $best 失败"; return 1; }
 	echo "$best"
 }
 
@@ -122,9 +166,32 @@ create_data_part() {
 }
 
 main() {
+	log "系统盘 $DISK，开始找 /opt 数据分区"
+
 	BEST=$(find_data_part)
 	if [ -z "$BEST" ]; then
-		log "$DISK 上没有 >=4GiB 的 ext4 数据分区，尝试新建"
+		# 有些机器 rootfs 和 eMMC 不是同一块盘（NAND + eMMC 双存储）：
+		# 系统盘上没有，就看看别的盘上有没有现成的大 ext4
+		for d in /sys/block/mmcblk* /sys/block/sd*; do
+			n=$(basename "$d")
+			case "$n" in *boot*|*rpmb*) continue ;; esac
+			[ "$n" = "$(basename "$DISK")" ] && continue
+			[ -b "/dev/$n" ] || continue
+			cand=$(DISK="/dev/$n"; find_data_part)
+			if [ -n "$cand" ]; then
+				log "系统盘上没有，改用另一块盘的 $cand"
+				BEST="$cand"
+				DISK="/dev/$n"
+				break
+			fi
+		done
+	fi
+	if [ -z "$BEST" ]; then
+		log "$DISK 上没有 >=4GiB 的 ext4 数据分区，看看有没有未格式化的"
+		BEST=$(claim_blank_part)
+	fi
+	if [ -z "$BEST" ]; then
+		log "也没有现成可用的分区，尝试在空闲空间新建"
 		BEST=$(create_data_part)
 	fi
 	[ -n "$BEST" ] || { log "没有可用的数据分区，/opt 继续留在 overlay"; return 0; }
