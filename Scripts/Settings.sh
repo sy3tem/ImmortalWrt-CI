@@ -104,10 +104,6 @@ case "$CFG_LC" in
 	# NanoPi R28S (RK3528A, dual GbE + AIC8800 WiFi)
 	bash "$GITHUB_WORKSPACE/Scripts/Inject-R28S.sh"
 	;;
-*zero2*)
-	# NanoPi Zero2 (RK3528A, single GbE, no onboard WiFi)
-	bash "$GITHUB_WORKSPACE/Scripts/Inject-ZERO2.sh"
-	;;
 *re-ss-01*|*re-cs-02*)
 	# 亚瑟 / 雅典娜 — 设备定义官方树里都有，只需要把 eMMC 数据分区挂到 /opt
 	bash "$GITHUB_WORKSPACE/Scripts/Inject-JDCLOUD.sh"
