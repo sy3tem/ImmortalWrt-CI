@@ -35,6 +35,14 @@ start() {
 
 	mkdir -p "$DEST" || { log "无法创建 $DEST"; return 1; }
 
+	# 全新刷机但 /opt 分区保留了上一套 open-box（刷机不清数据分区）时，
+	# 先把它挪开再解包，免得新旧文件混在一起。
+	if [ -d "$DEST" ] && [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
+		mv "$DEST" "$DEST.old" 2>/dev/null || rm -rf "$DEST"
+		mkdir -p "$DEST"
+		log "旧的 $DEST 已挪到 $DEST.old"
+	fi
+
 	free_kb=$(df -Pk /opt 2>/dev/null | awk 'NR==2 { print $4 }')
 	if [ -n "$free_kb" ] && [ "$free_kb" -lt "$NEED_KB" ]; then
 		log "/opt 剩余空间不足（${free_kb}KB < ${NEED_KB}KB），本次跳过，下次开机重试"

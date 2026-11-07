@@ -92,12 +92,34 @@ Scripts/
   Inject-ITV.sh      IPTV（itv）防火墙固化
   Inject-R28S.sh     R28S 设备树 / board.d / /opt 大分区
   Inject-RT28.sh     RT28 设备树 / 交换芯片补丁 / 预编译 U-Boot（跳过 configure+compile）
+  Inject-JDCLOUD.sh  亚瑟 / 雅典娜：把 eMMC 数据分区挂到 /opt
 target-patch/
   itv/               itv zone（firewall 片段）+ uci-defaults + hotplug
   r28s/              rk3528-nanopi-r28s.dts、设备 mk 片段、/opt init.d
   rt28/              RT28 dts / bootscript / 内核补丁 / 预编译 U-Boot / board.d
+  jdcloud/           亚瑟 / 雅典娜的 /opt 数据分区（uci-defaults）
   openbox/           Open-Box 预编译包（Makefile）+ 首启解包脚本
 ```
+
+## /opt 数据分区
+
+R28S / RT28 / 亚瑟 / 雅典娜 的 eMMC 上都有（或被我们造出）一块大分区给 `/opt`：
+
+| 设备 | 分区 | 做法 |
+|---|---|---|
+| R28S | p3（镜像里预留，首启扩容） | `target-patch/r28s/opt-partition/99-auto-resize-and-mount-opt` |
+| RT28 | p3（首启从 1280 MB 起分） | `target-patch/rt28/base-files/init.d/opt-mount` |
+| 亚瑟 / 雅典娜 | p19（出厂就有，约 110 GiB ext4） | `target-patch/jdcloud/opt-partition/99-mount-opt` |
+
+京东云这两台的坑在于：官方 fstab 里没有这块分区，`block-mount` 的 automount 会把它
+挂到 `/mnt/mmcblk0p19`，于是 `/opt` 一直落在 1.9 GiB 的 overlay 上 —— Open-Box 解包
+（174 MB）和 docker 数据全挤进去，overlay 一满就什么都存不下。`99-mount-opt` 在首次
+开机时（S10boot，早于 S11fstab 和所有服务）写一条 `fstab → /opt`，并把 overlay 上
+已有的 `/opt` 内容搬到数据分区；之后每次开机由 fstab 挂载。
+
+> 已经刷过旧固件、`/opt` 还留在 overlay 上的机器，要么重刷带这个脚本的版本，要么手工迁一次：
+> 备份 `/opt` → 停 `dockerd`/`openbox-panel` → 内容拷到数据分区 → `uci` 把该分区的 fstab
+> 目标改成 `/opt` 并启用 → `umount` 后挂到 `/opt` → 起服务、删掉 `/overlay/upper/opt`。
 
 ## Open-Box（闭源，随固件预装）
 
@@ -112,8 +134,8 @@ target-patch/
   LuCI 视图 + `menu.d` + `rpcd` ACL、`data/panel-port`（3036）和 `data/channel`。
   完成后写 `/etc/open-box.installed`，之后开机不再重复解包。
 
-为什么不编进镜像：**R28S / RT28 的 `/opt` 是开机才挂载的独立分区(p3)**，镜像里 `/opt`
-下的内容会被挂载盖掉，所以四台机器统一走「首启解包」。
+为什么不编进镜像：**四台机器的 `/opt` 都是开机才挂载的独立分区**（R28S / RT28 是 p3，
+亚瑟 / 雅典娜是 p19），镜像里 `/opt` 下的内容会被挂载盖掉，所以统一走「首启解包」。
 
 用法：
 
