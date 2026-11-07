@@ -89,8 +89,7 @@ jobs:
             libgnutls28-dev python3 python3-pyelftools python3-setuptools rsync unzip \
             zlib1g-dev file wget curl subversion flex bison bc cpio time swig libelf-dev \
             liblzma-dev device-tree-compiler u-boot-tools ccache dos2unix libfuse-dev \
-            zstd xxd patch diffstat quilt autoconf automake libtool pkg-config \
-            qemu-utils"
+            zstd xxd patch diffstat quilt autoconf automake libtool pkg-config"
           EXTRA="python3-distutils libncurses5-dev"
           sudo -E apt-get -yq --no-install-recommends install $DEPS
           sudo -E apt-get -yq install $EXTRA 2>/dev/null || true
@@ -99,7 +98,7 @@ jobs:
           # lmodern 等大量文档工具（固件编译并不需要），且偶发在 8 分钟超时后被
           # 杀，遗留 half-configured 的 dpkg 包，引发锁冲突与 "dpkg was interrupted"
           # 失败（见历史失败 run）。历史已验证：仅用上方 DEPS/EXTRA 清单即可成功
-          # 编译（上游脚本超时退回清单时 RK/QCA/ARMSR 均成功）。如确需启用上游
+          # 编译（上游脚本超时退回清单时 RK/QCA 均成功）。如确需启用上游
           # 脚本，将下方 WRT_SKIP_UPSTREAM 设为非 1 即可。
           WRT_SKIP_UPSTREAM="${WRT_SKIP_UPSTREAM:-1}"
           if [ "$WRT_SKIP_UPSTREAM" != "1" ]; then
@@ -134,7 +133,7 @@ jobs:
       - name: Initialization Values
         run: |
           echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
-          # 仅含"日期"的标签，用于把同一天各平台（RK / QCA / ARMSR）的固件
+          # 仅含"日期"的标签，用于把同一天各平台（RK / QCA）的固件
           # 合并进【同一个 Release】，避免每个平台各生成一个 Release 导致列表越积越多。
           echo "WRT_DATE_DAY=$(TZ=UTC-8 date +"%y.%m.%d")" >> $GITHUB_ENV
           echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
@@ -142,10 +141,10 @@ jobs:
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
-          # 文件名里的 wifi 段：带 WiFi 的设备 wifi-yes，其余（含 armsr/x86 虚拟机）wifi-no
+          # 文件名里的 wifi 段：*-NOWIFI* 变体 wifi-no，其余（R28S / RT28 / 亚瑟 / 雅典娜）wifi-yes
           case "${WRT_CONFIG^^}" in
-            *NOWIFI*|*ARMSR*|*X86*) echo "WRT_WIFI=wifi-no"  >> $GITHUB_ENV ;;
-            *)                       echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV ;;
+            *NOWIFI*) echo "WRT_WIFI=wifi-no"  >> $GITHUB_ENV ;;
+            *)        echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV ;;
           esac
 
           # variant marker used in the release tag only (files keep upstream names)
@@ -300,7 +299,7 @@ jobs:
 
             # ---- 统一文件名（与 ImmortalWrt-R28S 仓库完全一致）-----------------
             #   <源码>-<分支>-<wifi-yes|wifi-no>-<target>-<subtarget>[-<设备>]-<文件系统>[-full]-<日期>.<扩展名>
-            # 例：immortalwrt-master-wifi-no-armsr-armv8-generic-squashfs-combined-efi-26.11.02-09.43.18.qcow2
+            # 例：immortalwrt-master-wifi-no-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-26.11.06-09.57.25.img.gz
             # 好处：日期在末尾，同一设备不同批次一眼可分；不再有 vm_/wifi_ 这类前缀，
             # 也不必在配置名和上游名之间反复对照。
             # u-boot 一律不发布（刷机用出厂 bootloader 即可）。
@@ -325,44 +324,44 @@ jobs:
             rm -f ./*u-boot*
             cd ..
 
-            # --- armsr / UEFI VM (fnOS, KVM): 8 GiB sparse qcow2 ---------------
-            # 出厂 qcow2 只有 ~64 MiB 虚拟容量，导入虚拟机后放不下 docker 镜像。
-            # 先把虚拟容量抬到 8 GiB，growroot 首启会把 p2 和 ext4 扩满整块盘。
-            if [[ "${WRT_TARGET,,}" == *armsr* ]]; then
-              command -v qemu-img >/dev/null || sudo apt-get -y install qemu-utils
-              for q in ./upload/*.qcow2; do
-                [ -f "$q" ] || continue
-                qemu-img resize "$q" 8G
-                echo "resized: $q"
-                qemu-img info "$q" | head -3
-              done
-            fi
-
             make clean -j$(nproc)
           fi
 
-      - name: UEFI Boot Smoke Test (armsr)
-        # 真启动验证：用真实 edk2/AAVMF UEFI 固件在 QEMU 里把刚编出的 armsr 镜像
-        # 跑起来，校验 UEFI 启动 / 网卡自识别 / growroot / LuCI / 关键包都在。
-        # 仅 armsr/UEFI 平台执行。
-        # 现在这是【硬门禁】：镜像若真启不动，直接让本步失败，阻断 Release 发布 ——
-        # 绝不能再像以前那样 continue-on-error 让“假成功”悄悄放行坏镜像。
-        if: env.WRT_TEST != 'true' && contains(env.WRT_TARGET, 'armsr')
+      - name: Verify no-WiFi image
+        # 硬门禁：*-NOWIFI* 变体必须**真的**不含无线栈。
+        # 只看 .config 会误判——设备 mk 的 DEVICE_PACKAGES 被裁掉之后，
+        # .config 里仍留着 wpad-* / wifi-scripts / kmod-aic8800-* 这些 =m 行
+        # （R28S-NOWIFI 就是这种情况），但它们到底进没进镜像只有 .manifest 说了算。
+        # 所以这里直接查最终 rootfs 的装机包清单，命中任何无线包就失败、不发 Release。
+        if: env.WRT_TEST != 'true' && env.WRT_VARIANT == 'nowifi'
         run: |
-          sudo apt-get -y install qemu-system-arm qemu-efi-aarch64 sshpass netcat-openbsd
-          chmod +x "$GITHUB_WORKSPACE/Scripts/verify-armsr.sh"
-          bash "$GITHUB_WORKSPACE/Scripts/verify-armsr.sh" ./wrt/upload
+          set -eu
+          shopt -s nullglob
+          MANS=(./wrt/upload/*.manifest)
+          [ "${#MANS[@]}" -gt 0 ] || { echo "::error::no .manifest produced"; exit 1; }
+          PAT='^(wpad|wpad-[^ ]*|kmod-mac80211[^ ]*|kmod-ath[^ ]*|ath[0-9]+k-firmware[^ ]*|wifi-scripts|kmod-aic8800[^ ]*|aic8800-[a-z]+-firmware|ipq-wifi-[^ ]*|hostapd[^ ]*|kmod-mt79[^ ]*|mt79[0-9]+-firmware) '
+          rc=0
+          for MAN in "${MANS[@]}"; do
+            echo "checking $MAN"
+            BAD=$(grep -Ei "$PAT" "$MAN" || true)
+            if [ -n "$BAD" ]; then
+              echo "$BAD"
+              echo "::error file=$MAN::no-WiFi image still ships the wireless stack"
+              rc=1
+            fi
+          done
+          [ "$rc" -eq 0 ] && echo "OK: no wireless packages in the image"
 
       - name: Upload Fail Image (debug)
-        # 冒烟测试失败时把镜像留成 artifact，方便下载到本地用 QEMU 直接复现排查，
+        # 编译/校验失败时把镜像留成 artifact，方便下载到本地复现排查，
         # 不必再靠猜（这些文件永远不进 Release，仅保留 3 天）。
         if: failure() && env.WRT_TEST != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: debug-${{env.WRT_CONFIG}}-${{env.WRT_DATE}}
           path: |
-            ./wrt/upload/*.qcow2
             ./wrt/upload/*.img.gz
+            ./wrt/upload/*.bin
           retention-days: 3
 
       - name: Upload Test Config
@@ -380,12 +379,12 @@ jobs:
         if: env.WRT_TEST != 'true'
         uses: softprops/action-gh-release@master
         with:
-          # 按"天"聚合：同一天 RK / QCA / ARMSR 所有平台的固件合并进同一个 Release，
+          # 按"天"聚合：同一天 RK / QCA 所有平台的固件合并进同一个 Release，
           # 所有附件统一显示在一个 Release 下，而不是每个平台挨个列出。
           tag_name: ${{env.WRT_BRANCH}}-${{env.WRT_DATE_DAY}}
           files: ./wrt/upload/*.*
           body: |
-            本 Release 聚合了同一天构建的全部平台固件（RK / QCA / ARMSR 等），
+            本 Release 聚合了同一天构建的全部平台固件（Rockchip / Qualcommax），
             内含多个设备，请选择你需要的设备固件。
 
             源码：${{env.WRT_REPO}}（官方源）
@@ -406,8 +405,6 @@ jobs:
 
             文件命名（与 ImmortalWrt-R28S 仓库一致）：
               <源码>-<分支>-<wifi-yes|wifi-no>-<平台>-<子目标>[-<设备>]-<文件系统>-<时间>.<扩展名>
-              例：immortalwrt-master-wifi-no-armsr-armv8-generic-squashfs-combined-efi-26.11.02-09.43.18.qcow2
-            wifi-yes / wifi-no 标明该固件是否包含 WiFi 支持；
-            虚拟机镜像（armsr / x86，UEFI 启动，可直接导入 KVM / fnOS / VMware / Proxmox）
-            同样遵循该规则，wifi 段为 wifi-no。
+              例：immortalwrt-master-wifi-no-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-26.11.06-09.57.25.img.gz
+            wifi-yes / wifi-no 标明该固件是否包含 WiFi 支持。
             对应的配置快照为 Config-<配置名>-<源码>-<分支>-<时间>.txt。
