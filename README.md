@@ -1,6 +1,6 @@
 # ImmortalWrt-CI
 
-自己用的 ImmortalWrt 云编译仓库，GitHub Actions 上跑。只编手上这几台机器：
+自用的 ImmortalWrt 云编译仓库，GitHub Actions 上跑。只编手上这几台机器：
 
 - NanoPi R28S（rk3528）
 - Hugsun RT28（rk3528）
