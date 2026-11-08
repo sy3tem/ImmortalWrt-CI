@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+//
+// 无 WiFi 变体（R28S）：AIC8800 挂在 SDIO0 上，这里把整条 SDIO0 总线关掉。
+//
+// 只靠裁包（去掉 kmod-aic8800 / firmware）的话，mmc 总线仍然会去枚举 SDIO 卡，
+// 驱动缺失时还会反复 timeout 重试；从 DTS 关掉之后内核根本不探测这个控制器，
+// 开机更快、也没了那些 "error -84 whilst initialising SDIO card" 的噪声。
+//
+// 由 Scripts/Inject-R28S.sh 在 *-NOWIFI* 配置下追加到设备 DTS 末尾。
+
+&sdio0 {
+	status = "disabled";
+};

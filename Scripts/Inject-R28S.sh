@@ -28,6 +28,16 @@ mkdir -p "$DTS_DIR"
 cp -f "$PATCH_DIR/rk3528-nanopi-r28s.dts" "$DTS_DIR/rk3528-nanopi-r28s.dts"
 echo "[1] dts installed -> $DTS_DIR/rk3528-nanopi-r28s.dts"
 
+# ---- 1b) 无 WiFi 变体：DTS 里把 SDIO0 关掉 ----
+# 只裁包的话 mmc 还会去枚举 SDIO 卡、驱动缺失时反复超时重试；从 DTS 关掉整条总线最干净。
+if [[ "${WRT_CONFIG^^}" == *NOWIFI* ]]; then
+	cp -f "$PATCH_DIR/rk3528-nanopi-r28s-nowifi.dtsi" "$DTS_DIR/"
+	if ! grep -q 'rk3528-nanopi-r28s-nowifi.dtsi' "$DTS_DIR/rk3528-nanopi-r28s.dts"; then
+		printf '\n#include "rk3528-nanopi-r28s-nowifi.dtsi"\n' >> "$DTS_DIR/rk3528-nanopi-r28s.dts"
+	fi
+	echo "[1b] no-WiFi: SDIO0 disabled in DTS"
+fi
+
 # ---- 2) device definition ----
 if ! grep -q "friendlyarm_nanopi-r28s" "$IMG_MK"; then
 	cat "$PATCH_DIR/armv8-device-r28s.mk" >> "$IMG_MK"

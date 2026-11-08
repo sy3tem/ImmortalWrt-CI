@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+//
+// 无 WiFi 变体（亚瑟 RE-SS-01 / 雅典娜 RE-CS-02）：把 Q6（WiFi 固件）的预留内存收回来。
+//
+// 参考 VIKINGYFY/immortalwrt 的 ipq6018-nowifi.dtsi：他那边把 q6_region 从
+// 0x5500000(85M) 缩到 0x1000000(16M)，另外三块（q6_etr / m3_dump / ramoops）往上挪。
+// 这里只搬 q6_region 这一条——另外三个 label 不一定每棵树都有（取决于内核 patch），
+// 引用了不存在的 label 会直接让 dtc 报错；而真正占大头的就是 q6_region：
+//   1 GiB 机型（雅典娜）：85M -> 16M，收回 69M
+//   512M 机型（亚瑟，ipq6018-512m.dtsi 会把 q6_region 改成 55M）：55M -> 16M，收回 39M
+//
+// 由 Scripts/Inject-JDCLOUD.sh 在 *-NOWIFI* 配置下追加到设备 DTS 末尾
+// （必须放最后：设备 DTS 里 ipq6018-512m.dtsi 在前面，后写的覆盖先写的）。
+
+&q6_region {
+	reg = <0x0 0x4ab00000 0x0 0x1000000>;
+};

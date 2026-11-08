@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+//
+// 无 WiFi 变体（RT28）：MT7916 走 PCIe2x1，这里把 PCIe 控制器关掉。
+//
+// 这块板子的 PCIe 只接了 WiFi，关掉不影响两个网口（RTL8367B 是 Switch，不走 PCIe）。
+// 只裁包的话 pcie 控制器照样会 probe、等链路训练超时；从 DTS 关掉能省掉这段等待。
+//
+// 由 Scripts/Inject-RT28.sh 在 *-NOWIFI* 配置下追加到设备 DTS 末尾。
+
+&pcie {
+	status = "disabled";
+};

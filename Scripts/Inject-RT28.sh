@@ -23,6 +23,16 @@ cp -f "$PATCH_DIR"/dts/rk3528-hugsun-rt28.dts   "$RK_DIR/files/arch/arm64/boot/d
 cp -f "$PATCH_DIR"/dts/rk3528-hugsun-rt28.dtsi  "$RK_DIR/files/arch/arm64/boot/dts/rockchip/"
 echo "[1] DTS installed"
 
+# ---- 1b) 无 WiFi 变体：DTS 里把 PCIe（MT7916 所在）关掉 ----
+# 这块板子的 PCIe 只接 WiFi（两个网口走 RTL8367B Switch），关掉不影响有线。
+if [[ "${WRT_CONFIG^^}" == *NOWIFI* ]]; then
+	cp -f "$PATCH_DIR/dts/rk3528-hugsun-rt28-nowifi.dtsi" "$RK_DIR/files/arch/arm64/boot/dts/rockchip/"
+	if ! grep -q 'rk3528-hugsun-rt28-nowifi.dtsi' "$RK_DIR/files/arch/arm64/boot/dts/rockchip/rk3528-hugsun-rt28.dts"; then
+		printf '\n#include "rk3528-hugsun-rt28-nowifi.dtsi"\n' >> "$RK_DIR/files/arch/arm64/boot/dts/rockchip/rk3528-hugsun-rt28.dts"
+	fi
+	echo "[1b] no-WiFi: PCIe disabled in DTS"
+fi
+
 # ---- 2) kernel patches (dwmac-rk set_speed + rtl8365mb RTL8376RB) ----
 mkdir -p "$RK_DIR/patches-6.18"
 cp -f "$PATCH_DIR"/patches-6.18/998-dsa-rtl8365mb-add-rtl8376rb.patch        "$RK_DIR/patches-6.18/"

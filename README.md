@@ -65,7 +65,17 @@ IMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-rootfs | pa
 
 ## WiFi / 无 WiFi
 
-无 WiFi 版不是靠 `.config` 里写 `=n` 就能去掉的——`kmod-ath`、`mac80211`、`wpad`、`wifi-scripts` 这些会被 `DEVICE_PACKAGES` 强行装进 rootfs。所以 `Scripts/Post-Defconfig.sh` 会去裁设备的 `DEVICE_PACKAGES`，DTS 不动。
+无 WiFi 版分两层做，缺一层都不干净：
+
+1. **包层面**：`.config` 里写 `=n` 没用——`kmod-ath`、`mac80211`、`wpad`、`wifi-scripts` 这些会被 `DEVICE_PACKAGES` 强行装进 rootfs，所以 `Scripts/Post-Defconfig.sh` 会去裁设备的 `DEVICE_PACKAGES`。
+2. **DTS 层面**（照 VIKINGYFY 的思路）：把无线硬件本身关掉，而不是只让驱动加载失败——
+   | 设备 | 做法 | 文件 |
+   |---|---|---|
+   | R28S | `&sdio0 { status = "disabled"; }`（AIC8800 挂 SDIO0） | `target-patch/r28s/rk3528-nanopi-r28s-nowifi.dtsi` |
+   | RT28 | `&pcie { status = "disabled"; }`（MT7916 走 PCIe，网口走 Switch 不受影响） | `target-patch/rt28/dts/rk3528-hugsun-rt28-nowifi.dtsi` |
+   | 亚瑟 / 雅典娜 | 把 `q6_region`（WiFi 固件预留内存）从 55M(512M 机型)/85M(1G 机型) 缩到 **16M** | `target-patch/jdcloud/dts/ipq6018-nowifi.dtsi` |
+
+   三个 `Inject-*.sh` 在 `*-NOWIFI*` 配置下把对应片段**追加到设备 DTS 末尾**（幂等，重复跑不会插两次）；qualcommax 那条必须放最后，因为设备 DTS 先 include 的 `ipq6018-512m.dtsi` 还会再写一次 `q6_region`，后写的才生效。
 
 编完 `Verify no-WiFi image` 会直接翻最终镜像的 `.manifest`，只要还剩 `wpad*`、`kmod-mac80211`、`wifi-scripts`、`kmod-aic8800*`、`ipq-wifi-*` 就直接失败、不发 Release。看 `.config` 是看不出来的，裁掉的包在那里仍然是 `=m`。
 

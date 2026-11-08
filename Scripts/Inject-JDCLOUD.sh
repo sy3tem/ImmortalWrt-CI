@@ -67,4 +67,25 @@ else
 	echo "[2] $IMG_MK not found, skip"
 fi
 
+# ---- 3) 无 WiFi 变体：DTS 里收回 Q6（WiFi 固件）预留内存 ----
+# 只裁包的话 q6_region 还占着 55M(512M 机型) / 85M(1G 机型)，白白浪费；
+# 从 DTS 里把 q6_region 缩到 16M（数值取自 VIKINGYFY 的 ipq6018-nowifi.dtsi）。
+# 必须追加在设备 DTS 末尾：前面 ipq6018-512m.dtsi 还会再写一次 q6_region，后写的赢。
+if [[ "${WRT_CONFIG^^}" == *NOWIFI* ]]; then
+	QC_DTS_DIR="./target/linux/qualcommax/files/arch/arm64/boot/dts/qcom"
+	QC_SRC_DIR="./target/linux/qualcommax/dts"
+	if [ -d "$QC_DTS_DIR" ] && [ -f "$PATCH_DIR/dts/ipq6018-nowifi.dtsi" ]; then
+		cp -f "$PATCH_DIR/dts/ipq6018-nowifi.dtsi" "$QC_DTS_DIR/"
+		for d in ipq6000-re-ss-01 ipq6010-re-cs-02; do
+			f="$QC_SRC_DIR/$d.dts"
+			[ -f "$f" ] || continue
+			grep -q 'ipq6018-nowifi.dtsi' "$f" || \
+				printf '\n#include "ipq6018-nowifi.dtsi"\n' >> "$f"
+			echo "[3] $d: q6_region -> 16M (no-WiFi)"
+		done
+	else
+		echo "[3] qualcommax dts dir 不在，跳过 no-WiFi DTS"
+	fi
+fi
+
 echo "===== Inject JDCloud done ====="
