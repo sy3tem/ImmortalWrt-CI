@@ -3,10 +3,10 @@
 # Inject JDCloud (亚瑟 RE-SS-01 / 雅典娜 RE-CS-02) tweaks into an ImmortalWrt tree.
 #
 # 1) 把 eMMC 上那块 ~110 GiB 的 ext4 数据分区在首次开机时挂到 /opt（R28S 同款做法）。
-# 2) 给两台机器补一个 factory.bin，用于 U-Boot 直接刷入：
-#    上游这两个设备只出 sysupgrade.bin；U-Boot 的 mmc write 更顺手的是
-#    「kernel 补齐到 KERNEL_SIZE(6144k) 再拼 rootfs」，也就是同 subtarget 里
-#    link_nn6000-v1 用的那种 factory 布局。
+# 2) 给两台机器补一个 factory.bin，用于 U-Boot 直接刷入。
+#    写法逐字抄自 VIKINGYFY/immortalwrt 的 ipq60xx.mk（他的 factory 在亚瑟/雅典娜上
+#    实测能刷）：kernel 补齐到 KERNEL_SIZE(6144k) → 接 rootfs → append-metadata。
+#    注意没有 pad-rootfs —— 上游那行就没有，别自作主张加。
 #
 # Called from Scripts/Settings.sh with CWD = source tree root.
 set -e
@@ -47,7 +47,7 @@ if [ -f "$IMG_MK" ]; then
 			{
 				if (inblk && $0 == "endef") {
 					print "\tIMAGES += factory.bin"
-					print "\tIMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-rootfs | pad-rootfs | append-metadata"
+					print "\tIMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-rootfs | append-metadata"
 					inblk = 0
 				}
 				print
