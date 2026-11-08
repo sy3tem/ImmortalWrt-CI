@@ -85,6 +85,18 @@ if [[ "${WRT_CONFIG^^}" == *RE-CS-02* ]] && [ ! -d "$PKG_PATH/athena-led" ]; the
 	cp -rf "$TREE_ROOT/athena-tmp/luci-app-athena-led" "$PKG_PATH/"
 	rm -rf "$TREE_ROOT/athena-tmp"
 	echo "athena-led (v2.4.0) extracted for RE-CS-02!"
+
+	# 出厂默认就开屏：包里 /etc/config/athena_led 写的是 enabled '0'
+	# （VIKINGYFY 用的是另一份包，他那边默认就是 enable '1'）。
+	# 这里把默认值改成 1，配合首启的 99-athena-led（负责 enable 出 S99 链接）双保险：
+	# 就算 uci-defaults 没跑到，配置本身也是开的。
+	if [ -f "$PKG_PATH/athena-led/files/athena_led.config" ]; then
+		sed -i "s/^\([[:space:]]*option[[:space:]]\+enabled[[:space:]]*\)'0'/\1'1'/" \
+			"$PKG_PATH/athena-led/files/athena_led.config"
+		grep -q "option enabled '1'" "$PKG_PATH/athena-led/files/athena_led.config" \
+			&& echo "athena_led default enabled -> 1" \
+			|| echo "WARN: athena_led default enabled 没改成功"
+	fi
 fi
 
 cd "$PKG_PATH"
