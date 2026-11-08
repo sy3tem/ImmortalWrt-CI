@@ -9,6 +9,8 @@
 
 源码一律用官方 `immortalwrt/immortalwrt` 的 master，不挂第三方 fork。亚瑟和雅典娜官方树里本来就有设备定义、DTS 和 ipq-wifi board 数据，不用自己补。
 
+京东云这两台的 `factory.bin`（U-Boot 刷入用）写法、以及后续打算照搬的构建加速（复用 runner 的 LLVM/Go/Python/Rust，不自己编主机工具链），都参考了 [VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI) 和它的源码 fork [VIKINGYFY/immortalwrt](https://github.com/VIKINGYFY/immortalwrt)（`target/linux/qualcommax/image/ipq60xx.mk`）。
+
 ## 怎么编
 
 进 Actions 手动点，`CONFIGS` 传 JSON 数组：
