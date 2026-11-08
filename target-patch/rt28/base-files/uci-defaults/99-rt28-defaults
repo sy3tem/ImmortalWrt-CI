@@ -1,8 +1,8 @@
 #!/bin/sh
-# RT28 defaults: LAN 192.168.20.1/24, hostname DWRT, WiFi DWRT / WPA3 / key 12345678
+# RT28 defaults: LAN 192.168.10.1/24, hostname DWRT, WiFi DWRT / WPA3 / key 12345678
 
 # --- LAN management address (CIDR form; a bare IP makes netifd use /32) ---
-uci set network.lan.ipaddr='192.168.20.1/24'
+uci set network.lan.ipaddr='192.168.10.1/24'
 uci delete network.lan.netmask 2>/dev/null
 uci commit network
 
