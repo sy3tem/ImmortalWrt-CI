@@ -33,10 +33,18 @@
 
 按天合并到一个 Release，tag 是 `master-26.11.07` 这种。同一天不同平台的东西都在同一个 Release 下面，别按 workflow 找。
 
-文件名不改，还是上游那套，只在前面加 `<源码>-<分支>-wifi-yes|wifi-no`、末尾加构建时间：
+文件名不改，还是上游那套，只在前面加 `<源码>-<分支>`、末尾加构建时间。**默认（带 WiFi）文件名里没有 wifi 段**，只有无 WiFi 变体多插一个 `wifi-no-`：
 
 ```
-immortalwrt-master-wifi-yes-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade-26.11.07-13.41.bin
+immortalwrt-master-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade-26.11.07-13.41.bin
+immortalwrt-master-wifi-no-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade-26.11.07-13.41.bin
+```
+
+京东云这两台（亚瑟 / 雅典娜）除了 `sysupgrade.bin`，还会多出一个 **`factory.bin`**，给 U-Boot 直接 `mmc write` 用：kernel 补齐到 `KERNEL_SIZE`（6144k）再拼 rootfs，和同平台 `link_nn6000-v1` 的 factory 布局一致。`Scripts/Inject-JDCLOUD.sh` 往 `target/linux/qualcommax/image/ipq60xx.mk` 的两个设备块里补的：
+
+```make
+IMAGES += factory.bin
+IMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-rootfs | pad-rootfs | append-metadata
 ```
 
 配置快照是 `Config-<配置名>-<源码>-<分支>-<时间>.txt`，出问题可以对着看差异。
