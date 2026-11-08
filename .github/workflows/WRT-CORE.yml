@@ -85,11 +85,14 @@ jobs:
           sudo -E apt-get -yq update
           sudo -E apt-get -yq purge firefox 2>/dev/null || true
 
+          # clang/llvm/lld：给 BPF 工具链用（见 Scripts/Prepare-Build-Host.sh，
+          # 复用 runner 的 LLVM，不自己编 llvm-bpf，省 20–40 分钟）
           DEPS="build-essential gcc g++ make gawk gettext git libncurses-dev libssl-dev \
             libgnutls28-dev python3 python3-pyelftools python3-setuptools rsync unzip \
             zlib1g-dev file wget curl subversion flex bison bc cpio time swig libelf-dev \
             liblzma-dev device-tree-compiler u-boot-tools ccache dos2unix libfuse-dev \
-            zstd xxd patch diffstat quilt autoconf automake libtool pkg-config"
+            zstd xxd patch diffstat quilt autoconf automake libtool pkg-config \
+            clang llvm lld libclang-dev"
           EXTRA="python3-distutils libncurses5-dev"
           sudo -E apt-get -yq --no-install-recommends install $DEPS
           sudo -E apt-get -yq install $EXTRA 2>/dev/null || true
@@ -248,6 +251,10 @@ jobs:
           fi
 
           WRT_CONFIG="$WRT_CONFIG" WRT_TARGET="$WRT_TARGET" bash $GITHUB_WORKSPACE/Scripts/Settings.sh
+
+          # 复用 runner 自带的 LLVM / Go / 关掉 host python PGO：
+          # 这三个是构建里最慢的"自己编主机工具链"，换成现成的能省 30–60 分钟。
+          bash $GITHUB_WORKSPACE/Scripts/Prepare-Build-Host.sh
 
           make defconfig -j$(nproc)
 

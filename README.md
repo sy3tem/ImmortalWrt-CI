@@ -31,6 +31,18 @@
 
 `Auto-Clean` 跑完会自动带着重编一轮，所以每天有一批新固件。
 
+## 构建加速
+
+`Scripts/Prepare-Build-Host.sh` 在 `make defconfig` 之前跑，把三样最慢的「现场编主机工具链」换成 runner 现成的（思路照抄 [VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI)）：
+
+| 项 | 做法 | 大概省 |
+|---|---|---|
+| BPF 工具链 | `CONFIG_BPF_TOOLCHAIN_HOST=y` + `CONFIG_BPF_TOOLCHAIN_HOST_PATH=$(llvm-config --prefix)`，不编 `llvm-bpf`；改之前先拿 runner 的 clang/opt/llc 真编一段 BPF 目标码做冒烟 | 20–40 min |
+| Go bootstrap | `CONFIG_GOLANG_EXTERNAL_BOOTSTRAP_ROOT=$(go env GOROOT)` | 10–15 min |
+| host python | 只把 `HOST_CONFIGURE_ARGS` 里的 `--enable-optimizations` 换成 `--disable-optimizations`（PGO 对固件没用） | 5–10 min |
+
+任何一项做不了（runner 没装 LLVM、源码树不认这个符号）都只打 `::warning::`、不中断，最坏就是退回自己编。`Scripts/Post-Defconfig.sh` 会在 defconfig 之后复查这三个开关有没有被 kconfig 静默丢掉。
+
 ## 固件在哪儿拿
 
 按天合并到一个 Release，tag 是 `master-26.11.07` 这种。同一天不同平台的东西都在同一个 Release 下面，别按 workflow 找。
