@@ -28,6 +28,20 @@ else
 	echo "[1] $SRC not found, skip"
 fi
 
+# ---- 1b) 雅典娜点阵屏默认开启 ----
+# athena-led 自带的 /etc/config/athena_led 里 enabled='0'，而它的 postinst（负责
+# /etc/init.d/athena_led enable）只在装到设备上时才跑，编镜像时不跑 —— 于是刷完
+# 屏幕是黑的。这里首启补一次 enabled=1 + enable。
+if [[ "${WRT_CONFIG^^}" == *RE-CS-02* ]]; then
+	SRC_AL="$PATCH_DIR/athena-led/99-athena-led"
+	if [ -f "$SRC_AL" ]; then
+		mkdir -p "$UDIR"
+		cp -f "$SRC_AL" "$UDIR/99-athena-led"
+		chmod +x "$UDIR/99-athena-led"
+		echo "[1b] athena-led uci-defaults installed (默认开屏)"
+	fi
+fi
+
 # ---- 2) factory.bin（U-Boot 刷入用）----
 dev_has_factory() {
 	awk -v dev="$1" '

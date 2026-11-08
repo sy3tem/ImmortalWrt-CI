@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+#
+# /etc/uci-defaults/99-athena-led
+#
+# 雅典娜（RE-CS-02）点阵屏：默认打开。
+#
+# 为什么需要这一步：
+#   athena-led 包自带的 /etc/config/athena_led 里 `option enabled '0'`，
+#   而它的 postinst（会跑 `/etc/init.d/athena_led enable`）只在**装到设备上**时执行，
+#   编镜像时不会跑。结果就是：固件里服务没 enable、配置又是 disabled，
+#   刷完机屏幕一直黑，得手动去 LuCI 里点一次才亮。
+#
+# 这里在首启（S10boot，早于 S99 的服务启动）把它打开并 enable，
+# 之后每次开机自动亮屏。用户以后在 LuCI 里关掉也不会被重置——
+# uci-defaults 只跑一次。
+
+if [ -f /etc/config/athena_led ]; then
+	uci -q set athena_led.general.enabled='1'
+	uci -q commit athena_led
+	[ -x /etc/init.d/athena_led ] && /etc/init.d/athena_led enable 2>/dev/null
+	logger -t athena-led "首启默认开启点阵屏（enabled=1，已 enable）"
+fi
+
+exit 0

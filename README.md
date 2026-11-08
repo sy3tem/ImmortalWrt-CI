@@ -98,6 +98,12 @@ IMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-rootfs | pa
 
 R28S 和 RT28 也各有自己的做法，分别在 `target-patch/r28s/` 和 `target-patch/rt28/`。
 
+## 雅典娜点阵屏
+
+`athena-led`（unraveloop 的第三方包）自带的 `/etc/config/athena_led` 里是 `enabled='0'`，而负责 `enable` 的 postinst 只在**装到设备上**时执行，编镜像时不跑——所以直接刷机的话屏幕是黑的，得手动在 LuCI 里点一次。
+
+`target-patch/jdcloud/athena-led/99-athena-led` 在首启（S10boot，早于 S99 服务启动）补一次 `enabled=1` + `/etc/init.d/athena_led enable`，之后每次开机自动亮屏。`Inject-JDCLOUD.sh` 只在 `*RE-CS-02*` 配置下注入，亚瑟不受影响。
+
 ## Open-Box
 
 `target-patch/openbox/` 不编译，只搬运：Makefile 从 `liandu2024/Open-Box` 的 Release 拉 `v0.1.412` 的 arm64 tar.gz，`PKG_HASH` 用官方 `.sha256` 锁住，下载走 GitHub，失败回落 `gh-proxy.com`。
