@@ -67,6 +67,48 @@ if [ -d "$GITHUB_WORKSPACE/target-patch/openbox" ]; then
 	rm -rf "$PKG_PATH/open-box"
 	cp -rf "$GITHUB_WORKSPACE/target-patch/openbox" "$PKG_PATH/open-box"
 	echo "open-box package injected (payload shipped in image, unpacked on first boot)"
+
+	# ---- 编译前把版本改成上游 latest --------------------------------------
+	# 上游发新版会把旧 release 直接删掉，只留最近若干个。写死版本过几周必然 404：
+	#   2026-11-09  RK-ALL / QCA-ALL 七个作业全挂在
+	#   curl: (22) ... 404  ->  dl/open-box-v0.1.412-linux-arm64.tar.gz  Error 2
+	# 这里用 Releases API 取 tag + 该 asset 的 digest，改写 Makefile 里的
+	# PKG_VERSION / PKG_HASH；解析不出来就沿用 Makefile 的兜底版本，不阻塞构建。
+	ob_mk="$PKG_PATH/open-box/Makefile"
+	ob_latest="$(python3 - "$ob_mk" <<'PYEOF' 2>/dev/null
+import json, os, sys, urllib.request
+
+api = "https://api.github.com/repos/liandu2024/Open-Box/releases/latest"
+req = urllib.request.Request(api, headers={
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "immortalwrt-ci",
+})
+tok = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+if tok:
+    req.add_header("Authorization", "Bearer " + tok)
+rel = json.load(urllib.request.urlopen(req, timeout=30))
+tag = (rel.get("tag_name") or "").lstrip("v")
+want = "open-box-v%s-linux-arm64.tar.gz" % tag
+for a in rel.get("assets", []):
+    if a.get("name") == want:
+        dg = (a.get("digest") or "").replace("sha256:", "")
+        if tag and len(dg) == 64:
+            print(tag, dg)
+        break
+PYEOF
+)"
+	if [ -n "$ob_latest" ]; then
+		set -- $ob_latest
+		ob_ver="$1"; ob_sum="$2"
+		if [ "$ob_ver" != "$(sed -n 's/^PKG_VERSION:=//p' "$ob_mk")" ]; then
+			echo "open-box: 上游最新 v$ob_ver（Makefile 里是 v$(sed -n 's/^PKG_VERSION:=//p' "$ob_mk")），改用最新"
+		fi
+		sed -i "s|^PKG_VERSION:=.*|PKG_VERSION:=$ob_ver|" "$ob_mk"
+		sed -i "s|^PKG_HASH:=.*|PKG_HASH:=$ob_sum|" "$ob_mk"
+		echo "open-box pinned to upstream latest v$ob_ver ($ob_sum)"
+	else
+		echo "::warning::open-box: 解析上游 latest 失败，沿用 Makefile 兜底版本 v$(sed -n 's/^PKG_VERSION:=//p' "$ob_mk")"
+	fi
 fi
 
 # ---- luci-app-quickstart：不装 ---------------------------------------------

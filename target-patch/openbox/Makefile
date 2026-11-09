@@ -13,18 +13,21 @@
 #   /etc/init.d/open-box-firstboot 在首次开机时解到 /opt/open-box，
 #   再按官方 install.sh 的动作铺 init 脚本 / LuCI / 软链。
 #
-# 升级：改 PKG_VERSION 与 PKG_HASH（hash 取 Release 里同名 .sha256 的第一列）。
+# 版本：上游只保留最近若干个 release，旧 tag 会被删掉（0.1.412 已 404），
+# 所以 Scripts/Packages.sh 在编译前会用 Releases API 把 PKG_VERSION / PKG_HASH
+# 改写成 latest。下面的值只是离线兜底（API 不通时用），升级时同步改一下即可：
+# hash 取 Release 里同名 .sha256 的第一列，或用 API 的 asset.digest。
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=open-box
-PKG_VERSION:=0.1.412
+PKG_VERSION:=0.1.422
 PKG_RELEASE:=1
 
 PKG_SOURCE:=open-box-v$(PKG_VERSION)-linux-arm64.tar.gz
 PKG_SOURCE_URL:=https://github.com/liandu2024/Open-Box/releases/download/v$(PKG_VERSION) \
 	https://gh-proxy.com/https://github.com/liandu2024/Open-Box/releases/download/v$(PKG_VERSION)
-PKG_HASH:=c401a88771474aea27bc8d373307b263ce97aca26acda842e0bd88b84528f4a3
+PKG_HASH:=ab733d4fc53f1af8cb1259806a7d8fc082eb1ec28e64d8eab613e0e815a09f3b
 
 PKG_LICENSE:=LicenseRef-Open-Box-Proprietary
 PKG_MAINTAINER:=sy3tem
