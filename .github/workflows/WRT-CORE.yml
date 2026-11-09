@@ -273,6 +273,59 @@ jobs:
           cd ./wrt/
           make download -j$(nproc)
 
+      - name: Verify open-box payload
+        if: env.WRT_TEST != 'true'
+        # 上游只发预编译 tar.gz，首启脚本是按固定路径铺装的（openwrt/initd/...）。
+        # 目录布局一旦变化，固件照样能刷能开机，但 LuCI 里没有入口 / 点进去白屏，
+        # 只有刷完机才发现。这里在编译前把关键路径过一遍，缺了直接失败。
+        timeout-minutes: 10
+        run: |
+          cd ./wrt/
+          PKG="$(ls dl/open-box-*-linux-arm64.tar.gz 2>/dev/null | head -n1)"
+          if [ -z "$PKG" ]; then
+            echo "::error::open-box payload 没下载到 dl/ —— download 阶段没成功"
+            ls -l dl/ 2>/dev/null | grep -i open-box || true
+            exit 1
+          fi
+          echo "payload: $PKG ($(du -h "$PKG" | cut -f1))"
+          LIST=/tmp/openbox.list
+          if ! tar -tzf "$PKG" > "$LIST" 2>/dev/null; then
+            echo "::error::payload 无法解压（文件损坏或不是 tar.gz）"
+            exit 1
+          fi
+          echo "entries: $(wc -l < "$LIST")"
+
+          miss=0
+          check() {
+            if grep -qx "$1" "$LIST" || grep -qx "./$1" "$LIST"; then
+              echo "  ok    $1"
+            else
+              echo "::error::payload 缺少 $1 —— /etc/init.d/open-box-firstboot 铺装时会失败"
+              miss=$((miss + 1))
+            fi
+          }
+          check openwrt/initd/openbox
+          check openwrt/initd/openbox-panel
+          check openwrt/bin/open-box
+          check openwrt/luci/root/usr/share/luci/menu.d/luci-app-openbox.json
+          check openwrt/luci/root/usr/share/rpcd/acl.d/luci-app-openbox.json
+          # 视图 JS 的文件名随版本变，只要求目录下有 .js
+          if grep -qE '^\.?/?openwrt/luci/htdocs/luci-static/resources/view/openbox/[^/]+\.js$' "$LIST"; then
+            echo "  ok    openwrt/luci/htdocs/.../view/openbox/*.js"
+          else
+            echo "::error::payload 缺少 LuCI 视图 JS —— 菜单点进去会白屏"
+            miss=$((miss + 1))
+          fi
+
+          if [ "$miss" -ne 0 ]; then
+            echo "---- payload 里与 open-box 相关的条目（供对照）----"
+            grep -iE 'openbox|open-box' "$LIST" | head -30 || true
+            echo "---- 顶层目录 ----"
+            cut -d/ -f1 "$LIST" | sort -u | head -20
+            exit 1
+          fi
+          echo "open-box payload layout OK"
+
       - name: Compile Firmware
         if: env.WRT_TEST != 'true'
         # 无缓存首次编译约 90 分钟，命中 ccache 约 35 分钟；上限 240 分钟
