@@ -165,6 +165,22 @@ jobs:
           # keep .git so that `git apply --3way` works for the compat patches
           cd $GITHUB_WORKSPACE
 
+          # 2026-11-15 巡检修复：上游 firewall4 更新到 2026.11.08 后，包内
+          # root/etc/config/firewall 已迁出（配置默认值改由 firewall 包提供），
+          # 其自带 fullcone 补丁的 hunk1（改该文件）随之失效，导致 firewall4
+          # prepare 失败（run 43663203778）。这里在文件确实不存在时剔除 hunk1，
+          # 其余 hunk（ruleset.uc / zone-fullcone.uc / fw4.uc）均正常应用；
+          # 上游自行修复后此条件不再命中，自动跳过。
+          FW4_PATCH=package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
+          if [ -f "$FW4_PATCH" ] && [ ! -f ./wrt/package/network/config/firewall4/root/etc/config/firewall ]; then
+            awk '
+              /^--- a\/root\/etc\/config\/firewall/ { skip=1; next }
+              /^--- a\//                            { skip=0 }
+              !skip { print }
+            ' ./wrt/$FW4_PATCH > ./wrt/$FW4_PATCH.tmp && mv ./wrt/$FW4_PATCH.tmp ./wrt/$FW4_PATCH
+            echo "[fix] fullcone patch hunk1 stripped (upstream firewall4 config file moved)"
+          fi
+
       - name: Check Scripts
         run: |
           find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
