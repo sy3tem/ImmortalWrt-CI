@@ -165,21 +165,46 @@ jobs:
           # keep .git so that `git apply --3way` works for the compat patches
           cd $GITHUB_WORKSPACE
 
-          # 2026-11-15 巡检修复：上游 firewall4 更新到 2026.11.08 后，包内
-          # root/etc/config/firewall 已迁出（配置默认值改由 firewall 包提供），
-          # 其自带 fullcone 补丁的 hunk1（改该文件）随之失效，导致 firewall4
-          # prepare 失败（run 43663203778）。这里在文件确实不存在时剔除 hunk1，
-          # 其余 hunk（ruleset.uc / zone-fullcone.uc / fw4.uc）均正常应用；
-          # 上游自行修复后此条件不再命中，自动跳过。
-          FW4_PATCH=package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
-          if [ -f "$FW4_PATCH" ] && [ ! -f ./wrt/package/network/config/firewall4/root/etc/config/firewall ]; then
+          # 2026-11-16 修复：firewall4 2026.11.08 起，源包 root/etc/config/firewall
+          # 的 defaults 段与 001-fullcone 补丁 hunk1 上下文不再匹配（Hunk #1
+          # FAILED at 5），patch 一失败整个 firewall4 就 prepare 不了，所有平台
+          # 的 Compile Firmware 全挂。hunk1 唯一作用是给 defaults 补
+          # fullcone/flow_offloading 默认值，与其余 hunk（ruleset.uc /
+          # zone-fullcone.uc / fw4.uc）无耦合，因此直接剔除该段，默认值改由
+          # base-files 的 uci-defaults 首启写入。
+          # 上一版条件写成包内相对路径，而 clone 后 cwd 已回到 $GITHUB_WORKSPACE，
+          # 判断恒假、修复从未生效，这里统一用 ./wrt/ 前缀。
+          FW4_PATCH=./wrt/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
+          if [ -f "$FW4_PATCH" ]; then
             awk '
-              /^--- a\/root\/etc\/config\/firewall/ { skip=1; next }
-              /^--- a\//                            { skip=0 }
-              !skip { print }
-            ' ./wrt/$FW4_PATCH > ./wrt/$FW4_PATCH.tmp && mv ./wrt/$FW4_PATCH.tmp ./wrt/$FW4_PATCH
-            echo "[fix] fullcone patch hunk1 stripped (upstream firewall4 config file moved)"
+              /^--- a\/root\/etc\/config\/firewall/ { skip = 1; next }
+              /^--- /                               { skip = 0 }
+              !skip                                 { print }
+            ' "$FW4_PATCH" > "$FW4_PATCH.tmp"
+            if grep -q '^+++ b/root/usr/share/ucode/fw4.uc' "$FW4_PATCH.tmp"; then
+              mv "$FW4_PATCH.tmp" "$FW4_PATCH"
+              echo "[fix] fullcone patch hunk1 stripped (upstream config file changed)"
+            else
+              rm -f "$FW4_PATCH.tmp"
+              echo "::warning::fullcone patch 结构不符合预期，保持原样（可能上游已自行修复）"
+            fi
           fi
+
+          # 补齐被剔除的 fullcone 默认开关（等价于原 hunk1）
+          UD=./wrt/package/base-files/files/etc/uci-defaults
+          mkdir -p "$UD"
+          cat > "$UD/99-fullcone-defaults" <<'EOS'
+          #!/bin/sh
+          [ -f /etc/config/firewall ] || exit 0
+          uci -q get firewall.@defaults[0] >/dev/null 2>&1 || exit 0
+          uci -q set firewall.@defaults[0].flow_offloading='1'
+          uci -q set firewall.@defaults[0].flow_offloading_hw='1'
+          uci -q set firewall.@defaults[0].fullcone='1'
+          uci -q set firewall.@defaults[0].fullcone6='0'
+          uci -q commit firewall
+          exit 0
+          EOS
+          chmod 755 "$UD/99-fullcone-defaults"
 
       - name: Check Scripts
         run: |
