@@ -30,7 +30,14 @@ sed -i "s/zonename='UTC'/zonename='Asia\\/Shanghai'/g" $CFG_FILE
 echo "default timezone set to Asia/Shanghai (CST-8)!"
 
 # default root password = "password" (md5crypt)
-echo 'root:$1$4C5K7.$KQSzgarR6TWvov9ZTlKPS0:0:0:99999:7:::' > ./package/base-files/files/etc/shadow
+# 只替换 root 那一行，千万别整文件覆盖：base-files 的 /etc/shadow 里还有
+# daemon / network / nobody 等系统账号的锁定条目（`*`），用 `>` 重写会把它们
+# 全删掉，等于把三个系统账号变成"无密码"。2026-11-20 拆包对比上游镜像时发现。
+SHADOW=./package/base-files/files/etc/shadow
+{
+	echo 'root:$1$4C5K7.$KQSzgarR6TWvov9ZTlKPS0:0:0:99999:7:::'
+	grep -v '^root:' "$SHADOW" 2>/dev/null || true
+} > "$SHADOW.new" && mv "$SHADOW.new" "$SHADOW"
 echo "default root password set to 'password'!"
 
 # ---- luci / theme / language appended to .config ----
