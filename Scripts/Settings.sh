@@ -30,9 +30,8 @@ sed -i "s/zonename='UTC'/zonename='Asia\\/Shanghai'/g" $CFG_FILE
 echo "default timezone set to Asia/Shanghai (CST-8)!"
 
 # default root password = "password" (md5crypt)
-# 只替换 root 那一行，千万别整文件覆盖：base-files 的 /etc/shadow 里还有
-# daemon / network / nobody 等系统账号的锁定条目（`*`），用 `>` 重写会把它们
-# 全删掉，等于把三个系统账号变成"无密码"。2026-11-20 拆包对比上游镜像时发现。
+# 只替换 root 那一行，别整文件覆盖：base-files 的 /etc/shadow 里还有
+# daemon / network / nobody 的锁定条目（`*`），用 `>` 重写会把它们全删掉。
 SHADOW=./package/base-files/files/etc/shadow
 {
 	echo 'root:$1$4C5K7.$KQSzgarR6TWvov9ZTlKPS0:0:0:99999:7:::'
@@ -114,14 +113,6 @@ case "$CFG_LC" in
 *re-ss-01*|*re-cs-02*)
 	# 亚瑟 / 雅典娜 — 设备定义官方树里都有，只需要把 eMMC 数据分区挂到 /opt
 	bash "$GITHUB_WORKSPACE/Scripts/Inject-JDCLOUD.sh"
-	;;
-pon-*)
-	# PonWrt（Airoha AN7581 / AN7583 ONT）——故意什么都不注入：
-	#   · 设备没有 eMMC，也没有独立数据分区 → 不做 /opt、没有 opt-partition 脚本；
-	#   · 不带 open-box（174 MB 解包到 /opt，这台机器放不下也没意义）；
-	#   · 设备树 / board.d / UBI 布局 / PON board data 全部由 ponwrt 上游负责，
-	#     我们只做「外壳定制」：IP、主机名、root 密码、主题、中文、时区、IPTV。
-	echo "PonWrt config: external customization only (no /opt mount, no open-box)"
 	;;
 *)
 	# 本仓库只维护 ARM 实机（rockchip / qualcommax）；ARMSR / x86 已整体移除。

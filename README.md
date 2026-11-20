@@ -7,8 +7,6 @@
 - 京东云 亚瑟 RE-SS-01（ipq6000）
 - 京东云 雅典娜 RE-CS-02（ipq6010）
 
-外加一套 **PonWrt 光猫系列**（Airoha AN7581 / AN7583），源码是第三方 fork `pbs05/ponwrt`，单独一套配置与 workflow，见下文「PonWrt 光猫」。
-
 源码一律用官方 `immortalwrt/immortalwrt` 的 master，不挂第三方 fork。亚瑟和雅典娜官方树里本来就有设备定义、DTS 和 ipq-wifi board 数据，不用自己补。
 
 京东云这两台的 `factory.bin`（U-Boot 刷入用）写法、以及后续打算照搬的构建加速（复用 runner 的 LLVM/Go/Python/Rust，不自己编主机工具链），都参考了 [VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI) 和它的源码 fork [VIKINGYFY/immortalwrt](https://github.com/VIKINGYFY/immortalwrt)（`target/linux/qualcommax/image/ipq60xx.mk`）。
@@ -27,7 +25,6 @@
 |---|---|
 | `RK-ALL` | R28S-WIFI / R28S-NOWIFI / RT28 |
 | `QCA-ALL` | 亚瑟、雅典娜各两个变体 |
-| `PON-ALL` | PonWrt 光猫：`PON-AN7581` / `PON-AN7583`（源码 `pbs05/ponwrt`） |
 | `WRT-TEST` | 单配置试跑 |
 | `Auto-Clean` | 每天清旧 Release |
 | `Cache-Clean` | 每周清 ccache |
@@ -119,33 +116,6 @@ R28S 和 RT28 也各有自己的做法，分别在 `target-patch/r28s/` 和 `tar
 
 > Open-Box 是闭源专有软件，LICENSE 明确禁止未经许可的再分发。把发布包打进固件再发公开 Release 就是在再分发，公开发布前先确认拿到授权，或者把仓库和 Release 设私有。
 
-## PonWrt 光猫（Airoha AN7581 / AN7583）
-
-`PON-ALL` 编 `pbs05/ponwrt` —— 这是本仓库里唯一不用官方源的项目：它基于 ImmortalWrt，额外挂了 `openwrt-pon-drivers` / `openwrt-pon-userspace` 两个 feed。所以它单独一套配置、单独一个 workflow，跟 RK / QCA 的产物互不干扰。
-
-| 配置 | SoC | 当前启用（验证用一台） | 其余设备 |
-|---|---|---|---|
-| `PON-AN7581` | AN7581 | FiberHome HG5585F-CU | 配置里已列全，逐个取消注释即加 |
-| `PON-AN7583` | AN7583 | Nokia XG-040G-MF（UBI） | 同上 |
-
-**和另外几套的根本差别：设备没有 eMMC。**
-
-- **不做挂载** —— 没有 `/opt` 数据分区，也不装 `block-mount` / `automount` / `mmc-utils` / `f2fs-tools` / `resize2fs` / `tune2fs` / `parted` / `sfdisk` / `gdisk`。根分区是 UBI 里的 `fit` 卷，overlay 由 fstools 原生处理，不需要任何额外分区。`target-patch/{jdcloud,r28s,rt28}/opt-partition` 那套首启脚本对这套机器完全不参与。
-- **不带 Open-Box** —— 闭源面板解包 174 MB 到 `/opt`，这台机器既没 `/opt` 也没空间。
-- **全局配置单独一份** —— `Config/GENERAL-PON.txt`。`WRT-CORE` 按配置名前缀挑文件：`PON-*` 用 `GENERAL-PON.txt`，其余仍用 `GENERAL.txt`。
-- **docker 默认不带** —— dockerd + containerd + runc + docker-compose 约 35 MB，加上基础包镜像就从 ~45 MB 涨到 78–80 MB。sysupgrade 升级**不重排 UBI 卷**，现成的 `fit` 卷小于镜像就写不进去、刷完起不来（2026-11-20 真机上踩过）。要 docker 就把 `Config/PON-*.txt` 里那段注释打开，并确认 `fit` 卷 ≥100 MB，或走 U-Boot「重建 UBI」。
-
-PON 那部分是命根子，两处硬校验，缺一样就失败、不发 Release：
-
-1. `Scripts/Post-Defconfig.sh`：`make defconfig` 之后查 `.config` —— `kmod-airoha-xpon` / `airoha-ponctl` / `airoha-pond` / `luci-app-pon` 缺一不可；反过来 `open-box` / `block-mount` / `automount` / `f2fs-tools` 出现在 PON 配置里也直接失败（这样能省掉一次 90 分钟的编译）。
-2. `WRT-CORE` 的 `Verify PON stack`：编完查最终镜像的 `.manifest`。`.config` 看不出来的事（`DEVICE_PACKAGES` 强装、依赖被裁）只有装机清单说了算。
-
-产物是 `*.itb`（不是 `*.bin`），另有同名 `-recovery.itb` 供 U-Boot Web 恢复。刷机按上游流程：先用 [AN758x-Stock2UBI](https://github.com/pbs05/an758x-stock2ubi) 备份原厂分区并铺 UBI 布局，再用 [AN758x U-Boot](https://github.com/pbs05/uboot-an758x) 刷入；PON 校准与身份数据走 U-Boot Web 或 LuCI「网络 → PON → 配置 → PON board data」回填 —— **不恢复 `factory` 卷，PON 就注册不上**。
-
-加设备不用改代码：把 `Config/PON-AN7581.txt` / `Config/PON-AN7583.txt` 里对应 `CONFIG_TARGET_DEVICE_...=y` 的注释去掉即可，一个 `=y` 出一份固件（`MULTI_PROFILE` + `PER_DEVICE_ROOTFS`，上游 `configs/an7581.config` 就是这个用法）。
-
-> `airoha-ponctl` / `airoha-pond` 是 Rust 写的，首次无 cache 会比 rockchip/qualcommax 慢一截，ccache 命中后好很多。
-
 ## IPTV
 
 `itv` zone 是编译时直接写进 `firewall.config` 的，开机就有，不依赖任何脚本：
@@ -167,16 +137,15 @@ config zone
 
 ## 登录
 
-- `192.168.10.1`（**PonWrt 光猫系列是 `192.168.86.1`**，见 `PON-ALL.yml`）
+- `192.168.10.1`
 - root / `password`
 - WiFi `DWRT` / `12345678`
 
 ## 目录
 
 ```
-.github/workflows/  WRT-CORE.yml 是核心，RK-ALL / QCA-ALL / PON-ALL 只是调它的矩阵
-Config/             每台一个配置；GENERAL.txt 拼在设备配置前面，
-                    PON-* 改用 GENERAL-PON.txt（无 eMMC，不装挂载工具链、不带 open-box）
+.github/workflows/  WRT-CORE.yml 是核心，RK-ALL / QCA-ALL 只是调它的矩阵
+Config/             每台一个配置，GENERAL.txt 拼在设备配置前面
 Scripts/            Settings.sh 管默认值、Packages.sh 管第三方包
 target-patch/       各平台的增量改动：dts、init.d、uci-defaults
 ```

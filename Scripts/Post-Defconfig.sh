@@ -33,64 +33,8 @@ if [ -f .config ]; then
 	fi
 fi
 
-if [[ "${WRT_CONFIG^^}" != *NOWIFI* ]] && [[ "${WRT_CONFIG^^}" != PON-* ]]; then
-	echo "post-defconfig: not a NOWIFI/PON config, nothing to trim"
-	exit 0
-fi
-
-# ============================================================================
-# PonWrt 系列：PON 栈必须在，挂载 / open-box 必须不在
-# ----------------------------------------------------------------------------
-# 这台设备没有 eMMC：/opt 数据分区、block-mount、open-box 全是别的机型的东西，
-# 出现在这里就是配置残留。PON 那四个包反过来是命根子，被 defconfig 静默丢掉的话
-# 固件能开机、能进 LuCI，插上光纤才发现不亮 —— 所以在这里就失败，别等 90 分钟。
-# ============================================================================
-if [[ "${WRT_CONFIG^^}" == PON-* ]]; then
-	echo "post-defconfig: PON checks (stack / no-mount / no-open-box)"
-	rc=0
-	for sym in CONFIG_PACKAGE_kmod-airoha-xpon CONFIG_PACKAGE_airoha-ponctl \
-		CONFIG_PACKAGE_airoha-pond CONFIG_PACKAGE_luci-app-pon; do
-		if grep -qx "$sym=y" .config; then
-			echo "  ok    $sym"
-		else
-			echo "::error::$sym 被 defconfig 丢了 —— PON 起不来，先查 feeds/依赖再编译"
-			rc=1
-		fi
-	done
-	for sym in CONFIG_PACKAGE_open-box CONFIG_PACKAGE_block-mount CONFIG_PACKAGE_automount \
-		CONFIG_PACKAGE_mmc-utils CONFIG_PACKAGE_f2fs-tools; do
-		if grep -qx "$sym=y" .config; then
-			echo "::error::$sym 出现在 PON 配置里 —— 设备没有 eMMC，不该装挂载/面板"
-			rc=1
-		fi
-	done
-	if [ "$rc" -ne 0 ]; then
-		echo "::error::PON 配置校验失败（见上面每一条）"
-		exit 1
-	fi
-	echo "post-defconfig: PON checks passed"
-fi
-
-# ---- 请求了但被 defconfig 静默丢掉的包（"配置残留"的常见来源）--------------
-# 只告警不失败：有些包本来就带平台门控（如 nand-utils 需要 NAND_SUPPORT），
-# 在别的机型上请求它们属于配置写错，能看见就行。
-if [ -f .config ]; then
-	GEN="$GITHUB_WORKSPACE/Config/GENERAL.txt"
-	if [ -f "$GITHUB_WORKSPACE/Config/GENERAL-${WRT_CONFIG%%-*}.txt" ]; then
-		GEN="$GITHUB_WORKSPACE/Config/GENERAL-${WRT_CONFIG%%-*}.txt"
-	fi
-	miss=""
-	for sym in $(sed -n 's/^\(CONFIG_PACKAGE_[^=]*\)=y$/\1/p' \
-		"$GEN" "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" 2>/dev/null); do
-		grep -qx "$sym=y" .config || miss="$miss $sym"
-	done
-	if [ -n "$miss" ]; then
-		echo "::warning::这些请求被 defconfig 丢掉了（包不存在 / 平台门控 / 与别的包冲突）:$miss"
-	fi
-fi
-
 if [[ "${WRT_CONFIG^^}" != *NOWIFI* ]]; then
-	echo "post-defconfig: PON checks done; not a NOWIFI config, nothing to trim"
+	echo "post-defconfig: not a NOWIFI config, nothing to trim"
 	exit 0
 fi
 

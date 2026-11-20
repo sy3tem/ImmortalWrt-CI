@@ -139,9 +139,7 @@ jobs:
           # 仅含"日期"的标签，用于把同一天各平台（RK / QCA）的固件
           # 合并进【同一个 Release】，避免每个平台各生成一个 Release 导致列表越积越多。
           echo "WRT_DATE_DAY=$(TZ=UTC-8 date +"%y.%m.%d")" >> $GITHUB_ENV
-          # 产物名前缀取「仓库名」而不是「owner」：官方源 immortalwrt/immortalwrt 两种
-          # 写法结果一样（immortalwrt-…），而 pbs05/ponwrt 会变成 ponwrt-… 而不是 pbs05-…
-          echo "WRT_INFO=${WRT_SOURCE##*/}" >> $GITHUB_ENV
+          echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
@@ -290,18 +288,7 @@ jobs:
           else
             # GENERAL first (global defaults), device config last so a device
             # file can always override any GENERAL line (later wins in kconfig).
-            #
-            # 按配置名前缀取最贴切的全局文件：Config/GENERAL-<前缀>.txt 存在就用它，
-            # 否则用 Config/GENERAL.txt。PON 系列（前缀 PON）因此用的是
-            # Config/GENERAL-PON.txt —— 那台设备没有 eMMC，不该装区块挂载工具链，
-            # 也不该带 open-box。
-            GEN_FILE="$GITHUB_WORKSPACE/Config/GENERAL.txt"
-            CFG_PREFIX="${WRT_CONFIG%%-*}"
-            if [ -f "$GITHUB_WORKSPACE/Config/GENERAL-$CFG_PREFIX.txt" ]; then
-              GEN_FILE="$GITHUB_WORKSPACE/Config/GENERAL-$CFG_PREFIX.txt"
-              echo "global config: $(basename "$GEN_FILE") (prefix $CFG_PREFIX)"
-            fi
-            cat "$GEN_FILE" $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
+            cat $GITHUB_WORKSPACE/Config/GENERAL.txt $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
           fi
 
           WRT_CONFIG="$WRT_CONFIG" WRT_TARGET="$WRT_TARGET" bash $GITHUB_WORKSPACE/Scripts/Settings.sh
@@ -335,12 +322,6 @@ jobs:
         timeout-minutes: 10
         run: |
           cd ./wrt/
-          # 不是每个配置都带 open-box：PON 系列（无 eMMC，不带面板）就没编这个包，
-          # 此时 dl/ 里当然也不会有它的发布包。先看 .config 再决定要不要校验。
-          if ! grep -q '^CONFIG_PACKAGE_open-box=y' .config; then
-            echo "open-box 未编入 $WRT_CONFIG —— 跳过 payload 校验"
-            exit 0
-          fi
           PKG="$(ls dl/open-box-*-linux-arm64.tar.gz 2>/dev/null | head -n1)"
           if [ -z "$PKG" ]; then
             echo "::error::open-box payload 没下载到 dl/ —— download 阶段没成功"
@@ -449,16 +430,13 @@ jobs:
             make clean -j$(nproc)
           fi
 
-      - name: Verify no-WiFi image (NOWIFI variants only)
+      - name: Verify no-WiFi image
         # 硬门禁：*-NOWIFI* 变体必须**真的**不含无线栈。
         # 只看 .config 会误判——设备 mk 的 DEVICE_PACKAGES 被裁掉之后，
         # .config 里仍留着 wpad-* / wifi-scripts / kmod-aic8800-* 这些 =m 行
         # （R28S-NOWIFI 就是这种情况），但它们到底进没进镜像只有 .manifest 说了算。
         # 所以这里直接查最终 rootfs 的装机包清单，命中任何无线包就失败、不发 Release。
-        # PON 系列显式排除：那些配置里没有 *-NOWIFI* 变体（ponwrt 的 ONT 要么本来
-        # 没无线、要么无线跟着设备定义走），这条门禁对它们恒不适用，别让日志里
-        # 看着像漏了一步。
-        if: env.WRT_TEST != 'true' && env.WRT_VARIANT == 'nowifi' && !startsWith(env.WRT_CONFIG, 'PON-')
+        if: env.WRT_TEST != 'true' && env.WRT_VARIANT == 'nowifi'
         run: |
           set -eu
           shopt -s nullglob
@@ -477,30 +455,6 @@ jobs:
           done
           [ "$rc" -eq 0 ] && echo "OK: no wireless packages in the image"
 
-      - name: Verify PON stack
-        # PonWrt 门禁：固件少了 PON 驱动或用户态照样能开机、能进 LuCI，
-        # 插上光纤才发现 PON 不亮 —— 这种问题不能靠人肉发现。
-        # 与 no-WiFi 门禁同套路：不看 .config，直接查最终镜像的装机清单。
-        if: env.WRT_TEST != 'true' && startsWith(env.WRT_CONFIG, 'PON-')
-        run: |
-          set -eu
-          shopt -s nullglob
-          MANS=(./wrt/upload/*.manifest)
-          [ "${#MANS[@]}" -gt 0 ] || { echo "::error::no .manifest produced"; exit 1; }
-          rc=0
-          for MAN in "${MANS[@]}"; do
-            echo "checking $MAN"
-            for PKG in kmod-airoha-xpon airoha-ponctl airoha-pond luci-app-pon; do
-              if grep -qE "^$PKG " "$MAN"; then
-                echo "  ok    $PKG"
-              else
-                echo "::error file=$MAN::PON stack incomplete: missing $PKG"
-                rc=1
-              fi
-            done
-          done
-          [ "$rc" -eq 0 ] && echo "OK: PON stack present in every image"
-
       - name: Upload Fail Image (debug)
         # 编译/校验失败时把镜像留成 artifact，方便下载到本地复现排查，
         # 不必再靠猜（这些文件永远不进 Release，仅保留 3 天）。
@@ -511,7 +465,6 @@ jobs:
           path: |
             ./wrt/upload/*.img.gz
             ./wrt/upload/*.bin
-            ./wrt/upload/*.itb
           retention-days: 3
 
       - name: Upload Test Config
@@ -534,10 +487,10 @@ jobs:
           tag_name: ${{env.WRT_BRANCH}}-${{env.WRT_DATE_DAY}}
           files: ./wrt/upload/*.*
           body: |
-            本 Release 聚合了同一天构建的全部平台固件（Rockchip / Qualcommax / Airoha PON），
+            本 Release 聚合了同一天构建的全部平台固件（Rockchip / Qualcommax），
             内含多个设备，请选择你需要的设备固件。
 
-            源码：${{env.WRT_REPO}}（构建源）
+            源码：${{env.WRT_REPO}}（官方源）
             分支：${{env.WRT_BRANCH}}
             提交：${{env.WRT_HASH}}
 
