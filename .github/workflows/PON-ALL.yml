@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: MIT
+# PonWrt (Airoha AN7581 / AN7583 PON ONT) build matrix.
+#
+# Devices : AN7581 — FiberHome / Nokia / Gemtek / UnionMan / ZNXT / H3C
+#           AN7583 — Nokia XG-040G-MF
+# Source  : pbs05/ponwrt @ master（ImmortalWrt 派生树，带 openwrt-pon-* feeds）
+# Config  : Config/GENERAL-PON.txt + Config/PON-<SoC>.txt
+#           （无 eMMC → 不做 /opt 数据分区挂载；不带 open-box）
+#
+# 每个 SoC 一个 job；job 里具体编哪几台由 Config/PON-<SoC>.txt 的
+# CONFIG_TARGET_DEVICE_... 决定（MULTI_PROFILE + PER_DEVICE_ROOTFS，一机一固件）。
+# 默认只开一台验证，跑通后再去配置里放开其余设备。
+#
+# 注意：ponwrt 的 airoha-ponctl / airoha-pond 是 Rust 写的，会顺带编 Rust
+# 目标包，首次无缓存比 rockchip/qualcommax 慢一截（ccache 命中后会好很多）。
+
+name: PON-ALL
+
+on:
+  workflow_dispatch:
+    inputs:
+      CONFIGS:
+        description: 'JSON 数组，如 ["PON-AN7581"]；留空则编译全部。'
+        required: false
+        type: string
+      PACKAGE:
+        description: '手动调整插件包，多个用换行符隔开。'
+        required: false
+        type: string
+      TEST:
+        description: '仅输出配置文件，不编译固件。'
+        default: 'false'
+        required: false
+        type: boolean
+
+permissions: write-all
+
+jobs:
+  config:
+    name: ${{matrix.CONFIG}}
+    strategy:
+      fail-fast: false
+      matrix:
+        CONFIG: ${{ fromJSON(inputs.CONFIGS || '["PON-AN7581", "PON-AN7583"]') }}
+        SOURCE: [pbs05/ponwrt]
+        BRANCH: [master]
+
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_CONFIG: ${{matrix.CONFIG}}
+      WRT_THEME: argon
+      WRT_NAME: DWRT
+      WRT_SSID: DWRT
+      WRT_WORD: 12345678
+      WRT_IP: 192.168.86.1
+      WRT_PW: password
+      WRT_REPO: https://github.com/${{matrix.SOURCE}}.git
+      WRT_BRANCH: ${{matrix.BRANCH}}
+      WRT_SOURCE: ${{matrix.SOURCE}}
+      WRT_PACKAGE: ${{inputs.PACKAGE}}
+      WRT_TEST: ${{inputs.TEST}}

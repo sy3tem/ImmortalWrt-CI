@@ -61,9 +61,10 @@ done
 # ---- open-box：闭源预编译包，固件里带 tar、首启解到 /opt --------------------
 # 上游只发 aarch64 发布包；本仓库现在只剩 ARM 实机，架构正好对上。
 # 包本体在 target-patch/openbox/：Makefile 负责下载并校验发布包，
-# /etc/init.d/open-box-firstboot 负责首次开机解到 /opt/open-box（R28S/RT28 的
+# 包里 /etc/init.d/open-box-firstboot 负责首次开机解到 /opt/open-box（R28S/RT28 的
 # /opt 是开机挂载的分区，镜像里没法直接铺）。
-if [ -d "$GITHUB_WORKSPACE/target-patch/openbox" ]; then
+# PON 系列（配置名 PON-*）不编 open-box：无 eMMC、无 /opt，直接跳过。
+if [ -d "$GITHUB_WORKSPACE/target-patch/openbox" ] && [[ "${WRT_CONFIG^^}" != PON-* ]]; then
 	rm -rf "$PKG_PATH/open-box"
 	cp -rf "$GITHUB_WORKSPACE/target-patch/openbox" "$PKG_PATH/open-box"
 	echo "open-box package injected (payload shipped in image, unpacked on first boot)"
