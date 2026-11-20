@@ -10,8 +10,10 @@
 #     target-patch/{jdcloud,r28s,rt28}/opt-partition 那套首启脚本。
 #     根分区是 UBI 里的 fit 卷，overlay 由 fstools 原生处理，不需要任何挂载。
 #   · 不带 open-box（闭源面板，174 MB 解包到 /opt，此机型既没 /opt 也没空间）。
-#   · docker 保留（点锅要求），数据落在 UBI overlay 上；NAND 容量有限，
-#     真要跑容器建议自己插 U 盘、把 data-root 指过去。
+#   · 不带 docker：dockerd+containerd+runc+docker-compose 约 35 MB，加上基础包
+#     镜像就 78–80 MB，NAND 上现成的 fit 卷往往没这么大（sysupgrade 不重排卷，
+#     写完直接起不来）。要 docker 就在 Config/PON-*.txt 里把那段注释打开，
+#     并且确认 fit 卷 ≥100 MB，或走 U-Boot「重建 UBI」。
 
 #--- build options ---
 CONFIG_CCACHE=y
@@ -32,15 +34,6 @@ CONFIG_PACKAGE_kmod-nft-offload=y
 CONFIG_PACKAGE_kmod-tun=y
 CONFIG_PACKAGE_kmod-veth=y
 CONFIG_PACKAGE_kmod-wireguard=y
-
-#--- docker（数据落 overlay，见文件头说明）---
-CONFIG_PACKAGE_docker=y
-CONFIG_PACKAGE_dockerd=y
-CONFIG_PACKAGE_containerd=y
-CONFIG_PACKAGE_runc=y
-CONFIG_PACKAGE_tini=y
-CONFIG_PACKAGE_luci-app-dockerman=y
-CONFIG_PACKAGE_luci-i18n-dockerman-zh-cn=y
 
 #--- system tools ---
 CONFIG_PACKAGE_ca-bundle=y

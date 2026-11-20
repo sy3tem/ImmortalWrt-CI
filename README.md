@@ -133,7 +133,7 @@ R28S 和 RT28 也各有自己的做法，分别在 `target-patch/r28s/` 和 `tar
 - **不做挂载** —— 没有 `/opt` 数据分区，也不装 `block-mount` / `automount` / `mmc-utils` / `f2fs-tools` / `resize2fs` / `tune2fs` / `parted` / `sfdisk` / `gdisk`。根分区是 UBI 里的 `fit` 卷，overlay 由 fstools 原生处理，不需要任何额外分区。`target-patch/{jdcloud,r28s,rt28}/opt-partition` 那套首启脚本对这套机器完全不参与。
 - **不带 Open-Box** —— 闭源面板解包 174 MB 到 `/opt`，这台机器既没 `/opt` 也没空间。
 - **全局配置单独一份** —— `Config/GENERAL-PON.txt`。`WRT-CORE` 按配置名前缀挑文件：`PON-*` 用 `GENERAL-PON.txt`，其余仍用 `GENERAL.txt`。
-- **docker 保留**（点锅要求），数据落在 UBI overlay 上。NAND 容量有限，真要跑容器建议插 U 盘、把 data-root 指过去。
+- **docker 默认不带** —— dockerd + containerd + runc + docker-compose 约 35 MB，加上基础包镜像就从 ~45 MB 涨到 78–80 MB。sysupgrade 升级**不重排 UBI 卷**，现成的 `fit` 卷小于镜像就写不进去、刷完起不来（2026-11-20 真机上踩过）。要 docker 就把 `Config/PON-*.txt` 里那段注释打开，并确认 `fit` 卷 ≥100 MB，或走 U-Boot「重建 UBI」。
 
 PON 那部分是命根子，两处硬校验，缺一样就失败、不发 Release：
 
