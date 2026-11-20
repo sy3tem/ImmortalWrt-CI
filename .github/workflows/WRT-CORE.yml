@@ -449,13 +449,16 @@ jobs:
             make clean -j$(nproc)
           fi
 
-      - name: Verify no-WiFi image
+      - name: Verify no-WiFi image (NOWIFI variants only)
         # 硬门禁：*-NOWIFI* 变体必须**真的**不含无线栈。
         # 只看 .config 会误判——设备 mk 的 DEVICE_PACKAGES 被裁掉之后，
         # .config 里仍留着 wpad-* / wifi-scripts / kmod-aic8800-* 这些 =m 行
         # （R28S-NOWIFI 就是这种情况），但它们到底进没进镜像只有 .manifest 说了算。
         # 所以这里直接查最终 rootfs 的装机包清单，命中任何无线包就失败、不发 Release。
-        if: env.WRT_TEST != 'true' && env.WRT_VARIANT == 'nowifi'
+        # PON 系列显式排除：那些配置里没有 *-NOWIFI* 变体（ponwrt 的 ONT 要么本来
+        # 没无线、要么无线跟着设备定义走），这条门禁对它们恒不适用，别让日志里
+        # 看着像漏了一步。
+        if: env.WRT_TEST != 'true' && env.WRT_VARIANT == 'nowifi' && !startsWith(env.WRT_CONFIG, 'PON-')
         run: |
           set -eu
           shopt -s nullglob
