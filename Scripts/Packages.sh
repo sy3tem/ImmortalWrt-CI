@@ -125,7 +125,15 @@ if [[ "${WRT_CONFIG^^}" == *7DOLLAR* ]] && [ ! -d "$PKG_PATH/luci-theme-7dollar"
 	         "$PKG_PATH/luci-theme-7dollar/root/etc/uci-defaults/30_luci-theme-7dollar"; do
 		[ -f "$f" ] && sed -i "s/palette 'clay'/palette 'mist'/g" "$f"
 	done
-	echo "luci-theme-7dollar injected (default palette = mist / blue)"
+	# 关掉模板预编译。luci.mk 的 UtMin 会在构建机上用 host ucode 编译 .ut，
+	# 而主题的模板里 require('luci.7dollar') 依赖运行时装在
+	# /usr/share/ucode/luci/7dollar.uc 的模块，构建机解析不到，直接报
+	# "Unable to resolve path for module 'luci.7dollar'"。主题自己已经关掉了
+	# CSS/JS 压缩，这里把 UT 一起关掉，模板留源码、运行时再编。
+	sed -i '/^LUCI_MINIFY_CSS:=0/a LUCI_MINIFY_UT:=0' "$PKG_PATH/luci-theme-7dollar/Makefile"
+	grep -q '^LUCI_MINIFY_UT:=0' "$PKG_PATH/luci-theme-7dollar/Makefile" || \
+		echo 'LUCI_MINIFY_UT:=0' >> "$PKG_PATH/luci-theme-7dollar/Makefile"
+	echo "luci-theme-7dollar injected (default palette = mist / blue, UT precompile off)"
 fi
 
 # ---- luci-app-quickstart：不装 ---------------------------------------------
