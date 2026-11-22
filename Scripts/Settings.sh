@@ -114,6 +114,12 @@ case "$CFG_LC" in
 	# 亚瑟 / 雅典娜 — 设备定义官方树里都有，只需要把 eMMC 数据分区挂到 /opt
 	bash "$GITHUB_WORKSPACE/Scripts/Inject-JDCLOUD.sh"
 	;;
+pon-*)
+	# Airoha PON ONT —— 设备树/board.d/UBI 布局都由 ponwrt 上游负责，
+	# 这里只补两个小东西：概览温度（/sbin/tempinfo）和 hardware 页空值兜底。
+	# 无 eMMC：没有 /opt 数据分区，也没有 opt-partition 脚本；不带 open-box。
+	bash "$GITHUB_WORKSPACE/Scripts/Inject-PON.sh"
+	;;
 *)
 	# 本仓库只维护 ARM 实机（rockchip / qualcommax）；ARMSR / x86 已整体移除。
 	echo "WARN: unknown config '$WRT_CONFIG' — no platform injection applied"

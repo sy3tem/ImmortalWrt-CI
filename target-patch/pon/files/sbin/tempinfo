@@ -1,0 +1,24 @@
+#!/bin/sh
+# LuCI 概览的「温度」行 = luci.getTempInfo() 执行 /sbin/tempinfo 的输出。
+# 上游 ImmortalWrt 没装这个文件，所以概览里根本没有 Temperature 这一行。
+# 这里直接读 thermal_zone，并按需要附上 PON 光模块温度。
+
+cpu=""
+for z in /sys/class/thermal/thermal_zone*; do
+	[ "$(cat "$z/type" 2>/dev/null)" = "cpu-thermal" ] || continue
+	t=$(cat "$z/temp" 2>/dev/null) || continue
+	cpu=$(awk -v t="$t" 'BEGIN { printf "%.1f", t / 1000 }')
+	break
+done
+
+pon=""
+if command -v ponctl >/dev/null 2>&1; then
+	pon=$(ponctl status 2>/dev/null | sed -n 's/^temperature_celsius: *//p' | head -n 1)
+fi
+
+out=""
+[ -n "$cpu" ] && out="${cpu} °C (CPU)"
+[ -n "$pon" ] && out="${out:+$out / }${pon} °C (PON)"
+[ -n "$out" ] && echo "$out"
+
+exit 0
