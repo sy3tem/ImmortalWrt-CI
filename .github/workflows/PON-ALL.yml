@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: MIT
+# Airoha PON ONT (Nokia XG-040G-MF / FiberHome 等) build matrix.
+#
+# Devices : AN7583 — Nokia XG-040G-MF (UBI)
+#           AN7581 — FiberHome / Nokia / Gemtek / UnionMan / ZNXT / H3C
+# Source  : Loong1996/immortalwrt @ master-airoha
+#           （ImmortalWrt 分支，带 airoha 机型支持 + DRAM 容量自适应 + 网页 U-Boot）
+# Config  : Config/GENERAL-PON.txt + Config/PON-<SoC>.txt
+#           （无 eMMC → 不做 /opt 数据分区挂载；不带 open-box；不开 flow offload）
+#
+# 内存容量：upstream U-Boot 的 dram_init() 只读 DTS 的 512M 保底值再 fixup 给内核，
+# 换过 1G/2G 颗粒的机器会被摁回 512M。本 workflow 用的源码分支带了 DRAM 探测补丁，
+# U-Boot 启动时会打印 "dram: 1024 MiB probed ... 1 GiB"，内核随之拿到 1G。
+# 刷机时请配套使用该分支编出来的 bl31-uboot.fip（或 Loong1996 发布的同名文件）。
+
+name: PON-ALL
+
+on:
+  workflow_dispatch:
+    inputs:
+      CONFIGS:
+        description: 'JSON 数组，如 ["PON-AN7583"]；留空则编译全部。'
+        required: false
+        type: string
+      PACKAGE:
+        description: '手动调整插件包，多个用换行符隔开。'
+        required: false
+        type: string
+      TEST:
+        description: '仅输出配置文件，不编译固件。'
+        default: 'false'
+        required: false
+        type: boolean
+
+permissions: write-all
+
+jobs:
+  config:
+    name: ${{matrix.CONFIG}}
+    strategy:
+      fail-fast: false
+      matrix:
+        CONFIG: ${{ fromJSON(inputs.CONFIGS || '["PON-AN7583"]') }}
+        SOURCE: [Loong1996/immortalwrt]
+        BRANCH: [master-airoha]
+
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_CONFIG: ${{matrix.CONFIG}}
+      WRT_THEME: argon
+      WRT_NAME: DWRT
+      WRT_SSID: DWRT
+      WRT_WORD: 12345678
+      WRT_IP: 192.168.86.1
+      WRT_PW: password
+      WRT_REPO: https://github.com/${{matrix.SOURCE}}.git
+      WRT_BRANCH: ${{matrix.BRANCH}}
+      WRT_SOURCE: ${{matrix.SOURCE}}
+      WRT_PACKAGE: ${{inputs.PACKAGE}}
+      WRT_TEST: ${{inputs.TEST}}

@@ -1,0 +1,39 @@
+# PonWrt — Airoha AN7583（10G-PON ONT）系列
+# 源码：pbs05/ponwrt @ master（target airoha/an7583）
+# 产物：immortalwrt-airoha-an7583-<device>-squashfs-sysupgrade.itb
+#       + 同名 -recovery.itb
+#
+# 与 AN7581 同样：无 eMMC → 不做挂载、不带 open-box（见 Config/GENERAL-PON.txt）。
+#
+# 当前只启用一台做验证（Nokia XG-040G-MF 的 UBI 布局，配合 AN758x-Stock2UBI
+# 刷机流程）。跑通后再打开非 UBI 的 stock 布局那台。
+
+#--- target ---
+CONFIG_TARGET_airoha=y
+CONFIG_TARGET_airoha_an7583=y
+
+#--- 当前启用的设备 ---
+CONFIG_TARGET_DEVICE_airoha_an7583_DEVICE_nokia_xg-040g-mf-ubi=y
+
+#--- 其余设备（验证通过后逐个打开）---
+# CONFIG_TARGET_DEVICE_airoha_an7583_DEVICE_nokia_xg-040g-mf=y
+
+#--- PON 栈（同 AN7581，见 PON-AN7581.txt 的说明）---
+CONFIG_PACKAGE_kmod-airoha-xpon=y
+CONFIG_PACKAGE_kmod-airoha-pon-frontend=y
+CONFIG_PACKAGE_airoha-ponctl=y
+CONFIG_PACKAGE_airoha-pond=y
+CONFIG_PACKAGE_luci-app-pon=y
+CONFIG_PACKAGE_luci-i18n-pon-zh-cn=y
+
+#--- 可选：docker（默认关）---
+# 打开后镜像从 ~45 MB 涨到 ~80 MB。走 sysupgrade 升级不会重排 UBI 卷，
+# 现成的 fit 卷小于镜像就写不进去、刷完起不来；要开就先确认卷够大，
+# 或者走 U-Boot「重建 UBI」再刷。
+# CONFIG_PACKAGE_docker=y
+# CONFIG_PACKAGE_dockerd=y
+# CONFIG_PACKAGE_containerd=y
+# CONFIG_PACKAGE_runc=y
+# CONFIG_PACKAGE_tini=y
+# CONFIG_PACKAGE_luci-app-dockerman=y
+# CONFIG_PACKAGE_luci-i18n-dockerman-zh-cn=y

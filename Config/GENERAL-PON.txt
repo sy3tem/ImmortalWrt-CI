@@ -1,0 +1,75 @@
+# PonWrt (Airoha AN7581 / AN7583 ONT) — 全局默认值，拼在 PON 设备配置之前。
+#   .config = Config/GENERAL-PON.txt + Config/PON-<SoC>.txt
+# WRT-CORE 按配置名前缀选文件：配置名以 "PON-" 开头就用本文件，其它仍用
+# Config/GENERAL.txt。
+#
+# 与 GENERAL.txt 的差异都是「设备上根本没有」而不是漏写：
+#   · 没有 eMMC、没有独立数据分区 —— 所以没有 block-mount / automount /
+#     mmc-utils / f2fs-tools / resize2fs / tune2fs / parted / sfdisk / gdisk
+#     这一整条「找分区 → 格式化 → 挂到 /opt」的工具链，也没有
+#     target-patch/{jdcloud,r28s,rt28}/opt-partition 那套首启脚本。
+#     根分区是 UBI 里的 fit 卷，overlay 由 fstools 原生处理，不需要任何挂载。
+#   · 不带 open-box（闭源面板，174 MB 解包到 /opt，此机型既没 /opt 也没空间）。
+#   · 不带 docker：dockerd+containerd+runc+docker-compose 约 35 MB，加上基础包
+#     镜像就 78–80 MB，NAND 上现成的 fit 卷往往没这么大（sysupgrade 不重排卷，
+#     写完直接起不来）。要 docker 就在 Config/PON-*.txt 里把那段注释打开，
+#     并且确认 fit 卷 ≥100 MB，或走 U-Boot「重建 UBI」。
+
+#--- build options ---
+CONFIG_CCACHE=y
+CONFIG_DEVEL=y
+CONFIG_TARGET_MULTI_PROFILE=y
+CONFIG_TARGET_PER_DEVICE_ROOTFS=y
+# 恢复镜像（*-recovery.itb）：刷坏时用 U-Boot Web 恢复，不用拆机接串口。
+CONFIG_TARGET_ROOTFS_INITRAMFS=y
+CONFIG_TARGET_INITRAMFS_COMPRESSION_NONE=y
+CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256
+CONFIG_TARGET_UBIFS_FREE_SPACE_FIXUP=y
+
+#--- kernel / netfilter ---
+CONFIG_PACKAGE_kmod-fuse=y
+CONFIG_PACKAGE_kmod-inet-diag=y
+CONFIG_PACKAGE_kmod-mtd-rw=y
+CONFIG_PACKAGE_kmod-nft-offload=y
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_kmod-veth=y
+CONFIG_PACKAGE_kmod-wireguard=y
+
+#--- system tools ---
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_bash=y
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_iperf3=y
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_jq=y
+CONFIG_PACKAGE_openssh-sftp-server=y
+CONFIG_PACKAGE_tcpdump=y
+CONFIG_PACKAGE_unzip=y
+CONFIG_PACKAGE_wget-ssl=y
+CONFIG_PACKAGE_zram-swap=y
+
+#--- luci base / apps ---
+# luci 本体 + 主题 + 中文由 Scripts/Settings.sh 追加（WRT_THEME / LUCI_LANG）。
+CONFIG_PACKAGE_luci-app-autoreboot=y
+CONFIG_PACKAGE_luci-i18n-autoreboot-zh-cn=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+CONFIG_PACKAGE_luci-app-upnp=y
+CONFIG_PACKAGE_luci-i18n-upnp-zh-cn=y
+# firewall4 = nftables，所以取 miniupnpd-nftables（写 miniupnpd 会被 defconfig 丢弃）
+CONFIG_PACKAGE_miniupnpd-nftables=y
+CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+
+#--- DNS ---
+# dnsmasq-full 提供 DoT / nftset，缺了 DNS 能力会静默退化；kconfig 自动处理
+# dnsmasq <-> dnsmasq-full 的互斥。
+CONFIG_PACKAGE_dnsmasq-full=y
+
+#--- IPTV: rtp2httpd（组播转单播）---
+# itv zone / IGMPv2 / 组播路由由 Scripts/Inject-ITV.sh 在编译时固化，
+# 见 target-patch/itv/，与本文件无关。
+CONFIG_PACKAGE_rtp2httpd=y
+CONFIG_PACKAGE_luci-app-rtp2httpd=y
+CONFIG_PACKAGE_luci-i18n-rtp2httpd-zh-cn=y
