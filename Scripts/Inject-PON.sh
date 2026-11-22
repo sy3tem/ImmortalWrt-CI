@@ -13,6 +13,15 @@ install -D -m 755 "$GITHUB_WORKSPACE/target-patch/pon/files/sbin/tempinfo" \
 	./package/base-files/files/sbin/tempinfo
 echo "[1] /sbin/tempinfo installed (overview temperature: CPU + PON)"
 
+# ---- 1b) rpcd ACL：允许 luci.getTempInfo / getCPUInfo ----
+# 光有 /sbin/tempinfo 也不显示：LuCI 概览通过 ubus 调 luci.getTempInfo，而
+# /usr/share/rpcd/acl.d/luci-mod-status*.json 里的白名单没有 getTempInfo /
+# getCPUInfo，rpcd 直接回 -32002 Access denied，前端拿不到值就不渲染那两行。
+# 这里补一份独立 ACL（root 的 login 段是 list read '*'，会自动并入）。
+install -D -m 644 "$GITHUB_WORKSPACE/target-patch/pon/files/usr/share/rpcd/acl.d/90-luci-tempinfo.json" \
+	./package/base-files/files/usr/share/rpcd/acl.d/90-luci-tempinfo.json
+echo "[1b] rpcd ACL installed (luci.getTempInfo / getCPUInfo)"
+
 # ---- 2) luci-app-pon hardware.js 空值兜底 ----
 # /usr/libexec/pon-board-identity read <target> <field> 在没有数据时（例如 ri/bosa
 # 卷被重建 UBI 清空）返回空且 rc=0；LuCI 的 fs.exec 这时不带 stdout 字段，

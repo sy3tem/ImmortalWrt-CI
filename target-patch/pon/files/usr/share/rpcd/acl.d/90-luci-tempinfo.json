@@ -1,0 +1,10 @@
+{
+	"luci-extra-status": {
+		"description": "Allow reading CPU info and temperature",
+		"read": {
+			"ubus": {
+				"luci": [ "getCPUInfo", "getTempInfo" ]
+			}
+		}
+	}
+}
