@@ -1,155 +1,92 @@
 # ImmortalWrt-CI
 
-自用的 ImmortalWrt 云编译仓库，GitHub Actions 上跑。只编手上这几台机器：
+自己用的固件云编译仓库，跑在 GitHub Actions 上。想编哪台就进 Actions 点一下，产物直接发 Release。
 
-- NanoPi R28S（rk3528）
-- Hugsun RT28（rk3528）
-- 京东云 亚瑟 RE-SS-01（ipq6000）
-- 京东云 雅典娜 RE-CS-02（ipq6010）
+## 有哪些机器
 
-源码一律用官方 `immortalwrt/immortalwrt` 的 master，不挂第三方 fork。亚瑟和雅典娜官方树里本来就有设备定义、DTS 和 ipq-wifi board 数据，不用自己补。
+| 机器 | 平台 | 源码 |
+|---|---|---|
+| NanoPi R28S | rk3528 | `immortalwrt/immortalwrt` |
+| Hugsun RT28 | rk3528 | 同上，外加 `target-patch/rt28` 里的补丁 |
+| 京东云 亚瑟 RE-SS-01 | ipq6000 | 同上 |
+| 京东云 雅典娜 RE-CS-02 | ipq6010 | 同上 |
+| Nokia XG-040G-MF、FiberHome HG5585F 等光猫 | Airoha AN7581 / AN7583 | `pbs05/ponwrt` |
 
-京东云这两台的 `factory.bin`（U-Boot 刷入用）写法、以及后续打算照搬的构建加速（复用 runner 的 LLVM/Go/Python/Rust，不自己编主机工具链），都参考了 [VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI) 和它的源码 fork [VIKINGYFY/immortalwrt](https://github.com/VIKINGYFY/immortalwrt)（`target/linux/qualcommax/image/ipq60xx.mk`）。
+光猫的源码不一样，原因写在下面「光猫」那一节。
 
-## 怎么编
+## 怎么开编
 
-进 Actions 手动点，`CONFIGS` 传 JSON 数组：
+Actions → 选 workflow → Run workflow。
 
-```
-["JDCLOUD-RE-CS-02-WIFI"]
-```
+- `CONFIGS`：JSON 数组，比如 `["R28S-WIFI"]`，留空就全编
+- `TEST`：只出 `.config` 不编译，几分钟，产物在运行页面的 Artifacts 里
+- `PACKAGE`：临时加插件，一行一个
 
-不填就全编。只想要配置文件不要固件，把 `TEST` 勾上，五分钟出 `.config`。
-
-| workflow | 编什么 |
+| workflow | 干什么 |
 |---|---|
-| `RK-ALL` | R28S-WIFI / R28S-NOWIFI / RT28 |
+| `RK-ALL` | R28S-WIFI、R28S-NOWIFI、RT28 |
 | `QCA-ALL` | 亚瑟、雅典娜各两个变体 |
-| `WRT-TEST` | 单配置试跑 |
-| `Auto-Clean` | 每天清旧 Release |
+| `PON-ALL` | 光猫，默认只编 `PON-AN7583` |
+| `R28S-7DOLLAR` | R28S 换 7Dollar 主题那一版 |
+| `WRT-TEST` | 单个配置试跑 |
+| `Auto-Clean` | 每天清旧 Release，清完顺带重编一轮 |
 | `Cache-Clean` | 每周清 ccache |
 
-`Auto-Clean` 跑完会自动带着重编一轮，所以每天有一批新固件。
-
-## 构建加速
-
-`Scripts/Prepare-Build-Host.sh` 在 `make defconfig` 之前跑，把三样最慢的「现场编主机工具链」换成 runner 现成的（思路照抄 [VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI)）：
-
-| 项 | 做法 | 大概省 |
-|---|---|---|
-| BPF 工具链 | `CONFIG_BPF_TOOLCHAIN_HOST=y` + `CONFIG_BPF_TOOLCHAIN_HOST_PATH=$(llvm-config --prefix)`，不编 `llvm-bpf`；改之前先拿 runner 的 clang/opt/llc 真编一段 BPF 目标码做冒烟 | 20–40 min |
-| Go bootstrap | `CONFIG_GOLANG_EXTERNAL_BOOTSTRAP_ROOT=$(go env GOROOT)` | 10–15 min |
-| host python | 只把 `HOST_CONFIGURE_ARGS` 里的 `--enable-optimizations` 换成 `--disable-optimizations`（PGO 对固件没用） | 5–10 min |
-
-任何一项做不了（runner 没装 LLVM、源码树不认这个符号）都只打 `::warning::`、不中断，最坏就是退回自己编。`Scripts/Post-Defconfig.sh` 会在 defconfig 之后复查这三个开关有没有被 kconfig 静默丢掉。
-
-## 固件在哪儿拿
-
-按天合并到一个 Release，tag 是 `master-26.11.07` 这种。同一天不同平台的东西都在同一个 Release 下面，别按 workflow 找。
-
-文件名不改，还是上游那套，只在前面加 `<源码>-<分支>`、末尾加构建时间。**默认（带 WiFi）文件名里没有 wifi 段**，只有无 WiFi 变体多插一个 `wifi-no-`：
+## 文件名
 
 ```
-immortalwrt-master-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade-26.11.07-13.41.bin
-immortalwrt-master-wifi-no-qualcommax-ipq60xx-jdcloud_re-cs-02-squashfs-sysupgrade-26.11.07-13.41.bin
+<源码>-<分支>-[wifi-no-]<平台>-<子目标>-<设备>-<文件系统>[-full]-sy3tem-<日期时间>.<扩展名>
 ```
 
-京东云这两台（亚瑟 / 雅典娜）除了 `sysupgrade.bin`，还会多出一个 **`factory.bin`**，给 U-Boot 直接 `mmc write` 用：kernel 补齐到 `KERNEL_SIZE`（6144k）再拼 rootfs，和同平台 `link_nn6000-v1` 的 factory 布局一致。`Scripts/Inject-JDCLOUD.sh` 往 `target/linux/qualcommax/image/ipq60xx.mk` 的两个设备块里补的：
-
-```make
-IMAGES += factory.bin
-IMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-rootfs | pad-rootfs | append-metadata
-```
-
-配置快照是 `Config-<配置名>-<源码>-<分支>-<时间>.txt`，出问题可以对着看差异。
-
-## WiFi / 无 WiFi
-
-无 WiFi 版分两层做，缺一层都不干净：
-
-1. **包层面**：`.config` 里写 `=n` 没用——`kmod-ath`、`mac80211`、`wpad`、`wifi-scripts` 这些会被 `DEVICE_PACKAGES` 强行装进 rootfs，所以 `Scripts/Post-Defconfig.sh` 会去裁设备的 `DEVICE_PACKAGES`。
-2. **DTS 层面**（照 VIKINGYFY 的思路）：把无线硬件本身关掉，而不是只让驱动加载失败——
-   | 设备 | 做法 | 文件 |
-   |---|---|---|
-   | R28S | `&sdio0 { status = "disabled"; }`（AIC8800 挂 SDIO0） | `target-patch/r28s/rk3528-nanopi-r28s-nowifi.dtsi` |
-   | RT28 | `&pcie { status = "disabled"; }`（MT7916 走 PCIe，网口走 Switch 不受影响） | `target-patch/rt28/dts/rk3528-hugsun-rt28-nowifi.dtsi` |
-   | 亚瑟 / 雅典娜 | 把 `q6_region`（WiFi 固件预留内存）从 55M(512M 机型)/85M(1G 机型) 缩到 **16M** | `target-patch/jdcloud/dts/ipq6018-nowifi.dtsi` |
-
-   三个 `Inject-*.sh` 在 `*-NOWIFI*` 配置下把对应片段**追加到设备 DTS 末尾**（幂等，重复跑不会插两次）；qualcommax 那条必须放最后，因为设备 DTS 先 include 的 `ipq6018-512m.dtsi` 还会再写一次 `q6_region`，后写的才生效。
-
-编完 `Verify no-WiFi image` 会直接翻最终镜像的 `.manifest`，只要还剩 `wpad*`、`kmod-mac80211`、`wifi-scripts`、`kmod-aic8800*`、`ipq-wifi-*` 就直接失败、不发 Release。看 `.config` 是看不出来的，裁掉的包在那里仍然是 `=m`。
-
-## /opt 数据分区
-
-四台机器的 eMMC 上都有一块大分区给 `/opt` 用，但京东云这两台的官方 fstab 里没写，`block-mount` 会把它 auto 到 `/mnt/mmcblk0p19`，于是 `/opt` 一直落在 1.9 GiB 的 overlay 上。Open-Box 解包 174 MB、docker 数据一堆，overlay 很快就满。
-
-`target-patch/jdcloud/opt-partition/99-mount-opt` 在 S10boot 阶段（早于 S11fstab）自己找一块分区用，顺序是：
-
-1. 按 `/proc/cmdline` 的 `root=PARTUUID=` 定位系统盘，找 ≥4 GiB 的 ext4（2 G 的 rootfs `p18` 自然排除）
-2. 系统盘没有就扫另一块盘（NAND + eMMC 的机器）
-3. 有够大的未格式化分区就格成 ext4
-4. 都没有就从最后一个分区后面的空闲里补一个 GPT 分区再格式化
-
-四步都不行就记条日志放弃，不影响开机。选定后写 fstab → `/opt`，把 overlay 上已有的 `/opt` 搬进去，再摘掉 `/mnt` 的 automount。
-
-四种布局在 loop 设备上都测过。真机亚瑟走的是「已有 p19」那条；雅典娜首次开机看 `logread -e opt-partition` 就知道走了哪条。
-
-> 已经刷过旧固件、`/opt` 还留在 overlay 上的机器，要么重刷，要么手工迁一次：备份 `/opt` → 停 `dockerd` 和 `openbox-panel` → 内容拷到数据分区 → `uci` 把该分区 fstab 改成 `/opt` 并启用 → `umount` 后挂上去 → 起服务、删掉 `/overlay/upper/opt`。
-
-R28S 和 RT28 也各有自己的做法，分别在 `target-patch/r28s/` 和 `target-patch/rt28/`。
-
-## 雅典娜点阵屏
-
-`athena-led`（unraveloop 的第三方包）自带的 `/etc/config/athena_led` 里是 `enabled='0'`，而负责 `enable` 的 postinst 只在**装到设备上**时执行，编镜像时不跑——所以直接刷机的话屏幕是黑的，得手动在 LuCI 里点一次。
-
-`target-patch/jdcloud/athena-led/99-athena-led` 在首启（S10boot，早于 S99 服务启动）补一次 `enabled=1` + `/etc/init.d/athena_led enable`，之后每次开机自动亮屏。`Inject-JDCLOUD.sh` 只在 `*RE-CS-02*` 配置下注入，亚瑟不受影响。
-
-## Open-Box
-
-`target-patch/openbox/` 不编译，只搬运：Makefile 从 `liandu2024/Open-Box` 的 Release 拉 `v0.1.412` 的 arm64 tar.gz，`PKG_HASH` 用官方 `.sha256` 锁住，下载走 GitHub，失败回落 `gh-proxy.com`。
-
-发布包原样放进 `/usr/share/open-box/payload.tar.gz`，首启由 `open-box-firstboot`（S99）解到 `/opt/open-box`，再照官方 `install.sh` 铺 init.d、软链、LuCI 视图、menu.d 和 rpcd ACL。
-
-不直接打进镜像的原因很简单：这四台的 `/opt` 都是开机才挂的独立分区，镜像里放什么都会被盖掉，只能首启解包。
-
-面板在 `http://<LAN IP>:3036`，首次打开设密码。只启用面板，sing-box 内核默认不启动，和官方 install.sh 一致。卸载跑 `open-box uninstall`，卸载后重启不会自己装回来（压缩包铺完就删了）。
-
-> Open-Box 是闭源专有软件，LICENSE 明确禁止未经许可的再分发。把发布包打进固件再发公开 Release 就是在再分发，公开发布前先确认拿到授权，或者把仓库和 Release 设私有。
-
-## IPTV
-
-`itv` zone 是编译时直接写进 `firewall.config` 的，开机就有，不依赖任何脚本：
+比如：
 
 ```
-config zone
-	option name		itv
-	list   network		'itv'
-	option input		ACCEPT
-	option output		ACCEPT
-	option forward		DROP
-	option masq		0
-	option mtu_fix		0
+immortalwrt-master-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-sy3tem-26.11.22-09.51.21.img.gz
 ```
 
-三个要点：独立 zone 按接口名匹配（不按 IP 段，各地组播地址不一样）；`masq` 和 `mtu_fix` 必须关，组播不能过 NAT 和 conntrack；IGMPv2 和组播路由由 `/etc/hotplug.d/iface/97-itv-multicast` 和 `uci-defaults` 在接口 up 时补。
+带 WiFi 的版本文件名里没有 wifi 段，只有 `-NOWIFI` 变体会插一个 `wifi-no-`。每次还会附一份配置快照：`Config-<配置名>-<源码>-<分支>-<时间>.txt`。
 
-把 IPTV 口建成名字叫 `itv` 的接口就行，VLAN / DHCP / PPPoE / 静态都行，三样东西自动就位。`rtp2httpd` 已经内置。
+## 各平台上踩过的坑
+
+**无 WiFi 变体**：光在 `.config` 里写 `=n` 不够。`kmod-ath`、`mac80211`、`wpad`、`wifi-scripts` 这些会被设备的 `DEVICE_PACKAGES` 强行装进 rootfs，所以 defconfig 之后还得裁一遍设备包（`Scripts/Post-Defconfig.sh`）。编完会去翻最终镜像的 `.manifest`，还剩无线包就直接失败、不发 Release。
+
+**R28S / RT28 的 /opt**：这两台 eMMC 上有大分区，首启脚本自己找分区、格式化、挂到 `/opt`。代码在 `target-patch/r28s/` 和 `target-patch/rt28/`。
+
+**亚瑟 / 雅典娜**：除了 `/opt`，还有 LED 点阵屏（athena-led）。`factory.bin` 的写法参考了 VIKINGYFY 那套。
+
+**主题**：默认 argon。`R28S-7DOLLAR` 用第三方 [7Dollar](https://github.com/itsmaiGe/luci-theme-7dollar)，配色默认改成蓝色（`mist`）。这主题不在官方 feeds 里，编译时现场 clone 进 `package/`。
+
+## 光猫
+
+光猫用 [pbs05/ponwrt](https://github.com/pbs05/ponwrt)，不是官方 immortalwrt。PON 的驱动和用户态（`airoha-ponctl`、`airoha-pond`、`luci-app-pon`）只在它那两个 feed 里，换别的分支编出来是空的 —— 试过 Loong1996 那棵树，defconfig 之后这几个包一个都没有。
+
+几件跟硬件有关的账：
+
+- **1G 内存**：ponwrt 自带的 U-Boot 只会把 DTS 里的 512M 报给内核，1G 的机器也只认一半。设备上的 FIP 换成了 [Loong1996](https://github.com/Loong1996/ImmortalWrt-Airoha) 发的 `an7583-nokia-xg-040g-mf-bl31-uboot.fip`（带 DRAM 地址回绕探测），串口能看到 `dram: 1024 MiB probed`，内核 `Memory: 948640K/1048576K`。固件本身不用按容量分档。
+- **不挂载**：光猫没有 eMMC，也没有独立数据分区，所以不装 block-mount / automount / mmc-utils / f2fs-tools 那一串，也没有 `/opt` 脚本。
+- **不带 open-box**：那个面板要解到 `/opt`，光猫上没意义。
+- **flow offload 会让防火墙挂掉**：airoha 上开 `flow_offloading` 时，`nft` 会报 `flow offload @fb: Protocol error`，整份规则事务回滚，fw4 只剩半套 —— input 链里没有 zone 分发，LAN 侧的 DHCP、SSH、LuCI 全不通。PON 配置里已经关掉，其它平台不受影响。
+- **温度**：镜像里补了 `/sbin/tempinfo`，概览会显示 CPU 和光模块温度。
+- **ri / bosa**：这两个 UBI 卷存 MAC、SN 和光模块校准，重建 UBI 会清空。清空之后 `ponctl status` 显示 `serial_configured: 0`、`calibration: missing`，PON 注册不上，得从整片备份写回去。
+
+刷机按上游流程：U-Boot 网页「刷写系统」刷 `.itb`，救砖用同名的 `-initramfs-recovery.itb`。
 
 ## 登录
 
-- `192.168.10.1`
+- 地址 `192.168.10.1`；RT28 是 `192.168.20.1`，光猫是 `192.168.86.1`
 - root / `password`
 - WiFi `DWRT` / `12345678`
+- 主机名 `ImmortalWrt`
 
 ## 目录
 
 ```
-.github/workflows/  WRT-CORE.yml 是核心，RK-ALL / QCA-ALL 只是调它的矩阵
-Config/             每台一个配置，GENERAL.txt 拼在设备配置前面
-Scripts/            Settings.sh 管默认值、Packages.sh 管第三方包
-target-patch/       各平台的增量改动：dts、init.d、uci-defaults
+.github/workflows/   WRT-CORE.yml 是编译核心，其它只是传参数调它
+Config/              每个配置一个 txt；GENERAL.txt 拼在前面，PON 用 GENERAL-PON.txt
+Scripts/             Settings.sh 管默认值，Packages.sh 管第三方包，Inject-*.sh 是各平台注入
+target-patch/        各平台的增量文件：dts、init.d、uci-defaults
 ```
 
 ## 许可
 
-MIT。设备适配和脚本是这个仓库自己的，上游源码归 [immortalwrt/immortalwrt](https://github.com/immortalwrt/immortalwrt)。
+MIT。设备适配和脚本是这个仓库自己的，源码归上游。
