@@ -3,15 +3,21 @@
 #
 # Devices : AN7583 — Nokia XG-040G-MF (UBI)
 #           AN7581 — FiberHome / Nokia / Gemtek / UnionMan / ZNXT / H3C
-# Source  : Loong1996/immortalwrt @ master-airoha
-#           （ImmortalWrt 分支，带 airoha 机型支持 + DRAM 容量自适应 + 网页 U-Boot）
+# Source  : pbs05/ponwrt @ master
+#           ImmortalWrt 派生树，带 openwrt-pon-drivers / openwrt-pon-userspace 两个 feed
+#           （PON 驱动 + airoha-ponctl/pond + luci-app-pon 只在这棵树里有）
 # Config  : Config/GENERAL-PON.txt + Config/PON-<SoC>.txt
 #           （无 eMMC → 不做 /opt 数据分区挂载；不带 open-box；不开 flow offload）
 #
-# 内存容量：upstream U-Boot 的 dram_init() 只读 DTS 的 512M 保底值再 fixup 给内核，
-# 换过 1G/2G 颗粒的机器会被摁回 512M。本 workflow 用的源码分支带了 DRAM 探测补丁，
-# U-Boot 启动时会打印 "dram: 1024 MiB probed ... 1 GiB"，内核随之拿到 1G。
-# 刷机时请配套使用该分支编出来的 bl31-uboot.fip（或 Loong1996 发布的同名文件）。
+# 内存容量：ponwrt 自带的 U-Boot 的 dram_init() 只读 DTS 里的 512M 保底值再 fixup
+# 给内核，1G 颗粒会被摁回 512M。设备上的 FIP 已经换成 Loong1996/ImmortalWrt-Airoha
+# 发布的 an7583-nokia-xg-040g-mf-bl31-uboot.fip（带 DRAM 地址回绕探测），
+# 串口实测 "dram: 1024 MiB probed ... 1 GiB"、内核 Memory: 948640K/1048576K。
+# 所以固件本身不需要按容量分档 —— 只要 bootloader 是那一版就行。
+#
+# 注意：Loong1996/immortalwrt 那棵树虽然也有 airoha 支持，但它**不带 PON 用户态**
+# （实测 defconfig 后 CONFIG_PACKAGE_airoha-ponctl / airoha-pond / luci-app-pon
+# 全是空的），所以源码仍然用 ponwrt。
 
 name: PON-ALL
 
@@ -41,8 +47,8 @@ jobs:
       fail-fast: false
       matrix:
         CONFIG: ${{ fromJSON(inputs.CONFIGS || '["PON-AN7583"]') }}
-        SOURCE: [Loong1996/immortalwrt]
-        BRANCH: [master-airoha]
+        SOURCE: [pbs05/ponwrt]
+        BRANCH: [master]
 
     uses: ./.github/workflows/WRT-CORE.yml
     with:
