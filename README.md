@@ -46,6 +46,16 @@ immortalwrt-master-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-sy
 
 带 WiFi 的版本文件名里没有 wifi 段，只有 `-NOWIFI` 变体会插一个 `wifi-no-`。每次还会附一份配置快照：`Config-<配置名>-<源码>-<分支>-<时间>.txt`。
 
+Release 按平台分开，标签是 `<平台>-<日期>`：
+
+```
+rk-26.11.22     Rockchip（R28S / RT28）
+qca-26.11.22    Qualcommax（亚瑟 / 雅典娜）
+pon-26.11.22    Airoha 光猫
+```
+
+同平台同一天多次构建会合并进同一个 Release，不会混到别的平台里。Auto-Clean 每天清理时也是按平台各留最新一个。
+
 ## 各平台上踩过的坑
 
 **无 WiFi 变体**：光在 `.config` 里写 `=n` 不够。`kmod-ath`、`mac80211`、`wpad`、`wifi-scripts` 这些会被设备的 `DEVICE_PACKAGES` 强行装进 rootfs，所以 defconfig 之后还得裁一遍设备包（`Scripts/Post-Defconfig.sh`）。编完会去翻最终镜像的 `.manifest`，还剩无线包就直接失败、不发 Release。

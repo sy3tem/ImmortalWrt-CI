@@ -33,18 +33,24 @@ jobs:
             done
           done
 
-      - name: Release 只留最新
+      - name: Release 每个平台只留最新
         env:
           GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
         run: |
           set -uo pipefail
           repo="$GITHUB_REPOSITORY"
-          newest=$(gh api "repos/$repo/releases?per_page=1" --jq '.[0].id // empty')
-          if [ -z "$newest" ]; then echo "没有 release"; exit 0; fi
-          echo "保留 release $newest"
-          gh api "repos/$repo/releases?per_page=100" --jq '.[] | "\(.id)\t\(.tag_name)"' |
-          while IFS=$'\t' read -r id tag; do
-            [ "$id" = "$newest" ] && continue
+          # 标签形如 rk-26.11.22 / qca-26.11.22 / pon-26.11.22，
+          # 按「-」前面那段当平台分组，每组只留创建时间最新的一个，
+          # 别的平台不受影响。
+          gh api "repos/$repo/releases?per_page=100" \
+            --jq '.[] | "\(.created_at)\t\(.id)\t\(.tag_name)"' | sort -r |
+          awk -F'\t' '{
+              split($3, a, "-"); fam = a[1];
+              if (!(fam in seen)) { seen[fam] = 1; print "keep\t" $2 "\t" $3 }
+              else { print "drop\t" $2 "\t" $3 }
+            }' |
+          while IFS=$'\t' read -r act id tag; do
+            if [ "$act" = "keep" ]; then echo "保留 $tag"; continue; fi
             gh api -X DELETE "repos/$repo/releases/$id" >/dev/null && echo "  删除 release $tag"
             gh api -X DELETE "repos/$repo/git/refs/tags/$tag" >/dev/null 2>&1 || true
           done

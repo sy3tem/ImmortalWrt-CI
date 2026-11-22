@@ -145,6 +145,13 @@ jobs:
           # 固件名里的发行者段（日期之前），取仓库 owner，例如 …-sy3tem-26.11.22-09.51.21.img.gz
           echo "WRT_USER=${GITHUB_REPOSITORY_OWNER}" >> $GITHUB_ENV
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
+          # Release 按平台分开，用它当标签前缀：rockchip→rk、qualcommax→qca、airoha→pon
+          case "$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" in
+            rockchip)   echo "WRT_FAMILY=rk"  >> $GITHUB_ENV ;;
+            qualcommax) echo "WRT_FAMILY=qca" >> $GITHUB_ENV ;;
+            airoha)     echo "WRT_FAMILY=pon" >> $GITHUB_ENV ;;
+            *)          echo "WRT_FAMILY=other" >> $GITHUB_ENV ;;
+          esac
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
@@ -536,15 +543,16 @@ jobs:
         if: env.WRT_TEST != 'true'
         uses: softprops/action-gh-release@master
         with:
-          # 按"天"聚合：同一天 RK / QCA 所有平台的固件合并进同一个 Release，
-          # 所有附件统一显示在一个 Release 下，而不是每个平台挨个列出。
-          tag_name: ${{env.WRT_BRANCH}}-${{env.WRT_DATE_DAY}}
+          # 按平台分开：rk-26.11.22 / qca-26.11.22 / pon-26.11.22。
+          # 同平台同一天多次构建会合并进同一个 Release，不同平台互不混。
+          tag_name: ${{env.WRT_FAMILY}}-${{env.WRT_DATE_DAY}}
+          name: ${{env.WRT_FAMILY}}-${{env.WRT_DATE_DAY}}
           files: ./wrt/upload/*.*
           body: |
-            本 Release 聚合了同一天构建的全部平台固件（Rockchip / Qualcommax），
-            内含多个设备，请选择你需要的设备固件。
+            这个 Release 只放 ${{env.WRT_FAMILY}}（${{env.WRT_TARGET}}）这一个平台的固件。
+            同平台当天多次构建会合并到这里，别的平台去各自的 Release 取。
 
-            源码：${{env.WRT_REPO}}（官方源）
+            源码：${{env.WRT_REPO}}
             分支：${{env.WRT_BRANCH}}
             提交：${{env.WRT_HASH}}
 
@@ -560,8 +568,8 @@ jobs:
             内核版本：${{env.WRT_KVER}}
             插件列表：${{env.WRT_LIST}}
 
-            文件命名（与 ImmortalWrt-R28S 仓库一致）：
-              <源码>-<分支>-[wifi-no-]<平台>-<子目标>[-<设备>]-<文件系统>-<时间>.<扩展名>
-              例：immortalwrt-master-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-26.11.06-09.57.25.img.gz
+            文件命名：
+              <源码>-<分支>-[wifi-no-]<平台>-<子目标>[-<设备>]-<文件系统>-<发布者>-<时间>.<扩展名>
+              例：immortalwrt-master-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-sy3tem-26.11.22-09.51.21.img.gz
             默认（带 WiFi）文件名里没有 wifi 段；无 WiFi 变体多一段 wifi-no-，方便和默认版区分。
             对应的配置快照为 Config-<配置名>-<源码>-<分支>-<时间>.txt。
