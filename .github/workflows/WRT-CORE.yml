@@ -139,9 +139,11 @@ jobs:
           # 仅含"日期"的标签，用于把同一天各平台（RK / QCA）的固件
           # 合并进【同一个 Release】，避免每个平台各生成一个 Release 导致列表越积越多。
           echo "WRT_DATE_DAY=$(TZ=UTC-8 date +"%y.%m.%d")" >> $GITHUB_ENV
-          # 产物名前缀取「仓库名」而不是「owner」：官方源 immortalwrt/immortalwrt 两种
+          # 产物前缀取「仓库名」而不是「owner」：官方源 immortalwrt/immortalwrt 两种
           # 写法结果一样（immortalwrt-…），而 Loong1996/immortalwrt 会变成 immortalwrt-…
           echo "WRT_INFO=${WRT_SOURCE##*/}" >> $GITHUB_ENV
+          # 固件名里的发行者段（日期之前），取仓库 owner，例如 …-sy3tem-26.11.22-09.51.21.img.gz
+          echo "WRT_USER=${GITHUB_REPOSITORY_OWNER}" >> $GITHUB_ENV
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
@@ -426,9 +428,10 @@ jobs:
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
 
             # ---- 统一文件名（与 ImmortalWrt-R28S 仓库完全一致）-----------------
-            #   <源码>-<分支>-[wifi-no-]<target>-<subtarget>[-<设备>]-<文件系统>[-full]-<日期>.<扩展名>
+            #   <源码>-<分支>-[wifi-no-]<target>-<subtarget>[-<设备>]-<文件系统>[-full]-<发行者>-<日期>.<扩展名>
+            # 发行者段取仓库 owner（sy3tem），放在日期前面。
             # 默认（带 WiFi）不带 wifi 段；无 WiFi 变体才插一个 wifi-no-。
-            # 例：immortalwrt-master-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-26.11.06-09.57.25.img.gz
+            # 例：immortalwrt-master-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade-sy3tem-26.11.22-09.51.21.img.gz
             #     immortalwrt-master-wifi-no-rockchip-armv8-...（无 WiFi 变体）
             # 好处：日期在末尾，同一设备不同批次一眼可分；不再有 vm_/wifi_ 这类前缀，
             # 也不必在配置名和上游名之间反复对照。
@@ -449,7 +452,7 @@ jobs:
               # 兜底：若文件名里没有 target 关键字（多 profile 配置、或上游改名），
               # 退化为「去掉 immortalwrt-snapshot-r0-<hash>- 前缀」，避免二次拼接
               [ -n "$name" ] || name="$(printf '%s' "$base" | sed -E 's/^[^-]+-snapshot-r[0-9]+-[0-9a-f]+-//')"
-              mv -f "$f" "${WRT_INFO}-${WRT_BRANCH}-${WRT_WIFI_MARK}${name}${FULL_MARK}-${WRT_DATE}.${ext}"
+              mv -f "$f" "${WRT_INFO}-${WRT_BRANCH}-${WRT_WIFI_MARK}${name}${FULL_MARK}-${WRT_USER}-${WRT_DATE}.${ext}"
             done
             rm -f ./*u-boot*
             cd ..

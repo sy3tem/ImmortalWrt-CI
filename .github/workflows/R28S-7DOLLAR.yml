@@ -31,7 +31,7 @@ jobs:
     with:
       WRT_CONFIG: R28S-7DOLLAR
       WRT_THEME: 7dollar
-      WRT_NAME: ImmortalWrt-sy3tem
+      WRT_NAME: ImmortalWrt
       WRT_SSID: DWRT
       WRT_WORD: 12345678
       WRT_IP: 192.168.10.1
