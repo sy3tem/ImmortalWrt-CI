@@ -47,7 +47,7 @@ jobs:
     with:
       WRT_CONFIG: ${{matrix.CONFIG}}
       WRT_THEME: argon
-      WRT_NAME: DWRT
+      WRT_NAME: imm
       WRT_SSID: DWRT
       WRT_WORD: 12345678
       WRT_IP: 192.168.10.1

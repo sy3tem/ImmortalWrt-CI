@@ -1,0 +1,32 @@
+# NanoPi R28S (RK3528A) — 第三方主题 7Dollar 专用版
+# Source : immortalwrt/immortalwrt @ master (official)
+# Image  : immortalwrt-rockchip-armv8-friendlyarm_nanopi-r28s-squashfs-sysupgrade.img.gz
+#
+# 跟 R28S-WIFI 的唯一区别：LuCI 主题换成 itsmaiGe/luci-theme-7dollar，
+# 默认配色改成蓝色（palette 'mist' 雾蓝）。主题包不在官方 feeds 里，
+# 由 Scripts/Packages.sh 现场 clone 进 package/ 再参与编译。
+
+#--- target ---
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_friendlyarm_nanopi-r28s=y
+
+#--- partition layout ---
+CONFIG_TARGET_KERNEL_PARTSIZE=128
+CONFIG_TARGET_ROOTFS_PARTSIZE=1024
+CONFIG_TARGET_ROOTFS_EXT4FS=n
+
+#--- WiFi (AIC8800, SDIO0) + Bluetooth ---
+CONFIG_PACKAGE_wpad-openssl=y
+CONFIG_PACKAGE_wifi-scripts=y
+# the AIC8800 kmods and firmware MUST be built in (not =m): modules are not
+# pre-installed onto the squashfs root, so =m would leave both radios dead.
+CONFIG_PACKAGE_kmod-aic8800-sdio=y
+CONFIG_PACKAGE_aic8800-sdio-firmware=y
+CONFIG_AIC8800_SDIO_BT_SUPPORT=y
+
+#--- second port: RTL8111H on PCIe (r8169 must be built in as well) ---
+CONFIG_PACKAGE_kmod-r8169=y
+
+#--- LuCI theme: 7Dollar（第三方，见 Scripts/Packages.sh）---
+CONFIG_PACKAGE_luci-theme-7dollar=y

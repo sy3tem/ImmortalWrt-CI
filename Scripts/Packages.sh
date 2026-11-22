@@ -111,6 +111,23 @@ PYEOF
 	fi
 fi
 
+# ---- luci-theme-7dollar（第三方主题，R28S-7DOLLAR 专用）----------------------
+# 官方 feeds 没有这个主题，现场 clone 进 package/。默认配色改成蓝色：
+# 主题自带的 /etc/config/7dollar 写的是 palette 'clay'（陶土），这里换成
+# 'mist'（雾蓝），uci-defaults 里那份 printf 兜底也一起改，保证首次开机就是蓝色。
+if [[ "${WRT_CONFIG^^}" == *7DOLLAR* ]] && [ ! -d "$PKG_PATH/luci-theme-7dollar" ]; then
+	echo " "
+	git clone -q --depth=1 --single-branch --branch main \
+		"https://github.com/itsmaiGe/luci-theme-7dollar.git" "$TREE_ROOT/7dollar-tmp"
+	cp -rf "$TREE_ROOT/7dollar-tmp" "$PKG_PATH/luci-theme-7dollar"
+	rm -rf "$PKG_PATH/luci-theme-7dollar/.git" "$TREE_ROOT/7dollar-tmp"
+	for f in "$PKG_PATH/luci-theme-7dollar/root/etc/config/7dollar" \
+	         "$PKG_PATH/luci-theme-7dollar/root/etc/uci-defaults/30_luci-theme-7dollar"; do
+		[ -f "$f" ] && sed -i "s/palette 'clay'/palette 'mist'/g" "$f"
+	done
+	echo "luci-theme-7dollar injected (default palette = mist / blue)"
+fi
+
 # ---- luci-app-quickstart：不装 ---------------------------------------------
 # 它只是一个纯前端 SPA，所有接口都靠 iStoreOS 的 Go 守护进程；为了「网络向导」
 # 能保存而把守护进程整套塞进固件，体积和依赖都不划算，现已整体移除。
