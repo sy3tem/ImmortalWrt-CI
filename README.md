@@ -63,7 +63,7 @@ pon-26.11.22    Airoha 光猫
 
 **亚瑟 / 雅典娜**：除了 `/opt`，还有 LED 点阵屏（athena-led）。`factory.bin` 的写法参考了 VIKINGYFY 那套。
 
-**主题**：全平台统一用第三方的 [7Dollar](https://github.com/itsmaiGe/luci-theme-7dollar)，配色默认蓝色（`mist` 雾蓝）。这主题不在官方 feeds 里，编译时现场 clone 进 `package/`，并关掉 ucode 模板预编译（它模板里的 `require('luci.7dollar')` 在构建机上解析不到）。想换配色去 LuCI 的系统 → 7Dollar 外观，五套随便挑。
+**主题**：默认 argon（官方 feeds 自带）。想要第三方的 [7Dollar](https://github.com/itsmaiGe/luci-theme-7dollar) 就把对应 workflow 的 `WRT_THEME` 改成 `7dollar`，编译时现场 clone 进 `package/`（配色默认 `mist` 雾蓝）。7Dollar 要关掉 ucode 模板预编译，脚本里已经处理。
 
 ## 光猫
 

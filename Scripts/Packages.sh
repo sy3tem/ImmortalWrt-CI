@@ -111,11 +111,11 @@ PYEOF
 	fi
 fi
 
-# ---- luci-theme-7dollar（第三方主题，全平台默认）----------------------------
-# 官方 feeds 没有这个主题，只要 WRT_THEME=7dollar 就现场 clone 进 package/。
-# 默认配色改成蓝色：主题自带的 /etc/config/7dollar 写的是 palette 'clay'（陶土），
-# 这里换成 'mist'（雾蓝），uci-defaults 里那份 printf 兜底也一起改，
-# 保证首次开机就是蓝色。
+# ---- luci-theme-7dollar（可选第三方主题）------------------------------------
+# 默认主题是 argon（官方 feeds 自带）；把某条 workflow 的 WRT_THEME 改成 7dollar
+# 就现场 clone 这个主题进 package/。默认配色是蓝色：主题自带的
+# /etc/config/7dollar 写的是 palette 'clay'（陶土），这里换成 'mist'（雾蓝），
+# uci-defaults 里那份 printf 兜底也一起改，保证首次开机就是蓝色。
 if [ "${WRT_THEME:-}" = "7dollar" ] && [ ! -d "$PKG_PATH/luci-theme-7dollar" ]; then
 	echo " "
 	git clone -q --depth=1 --single-branch --branch main \

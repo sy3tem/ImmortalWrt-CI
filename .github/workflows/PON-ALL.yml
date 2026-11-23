@@ -53,7 +53,7 @@ jobs:
     uses: ./.github/workflows/WRT-CORE.yml
     with:
       WRT_CONFIG: ${{matrix.CONFIG}}
-      WRT_THEME: 7dollar
+      WRT_THEME: argon
       WRT_NAME: ImmortalWrt
       WRT_SSID: DWRT
       WRT_WORD: 12345678
