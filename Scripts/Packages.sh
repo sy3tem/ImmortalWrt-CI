@@ -136,6 +136,44 @@ if [[ "${WRT_CONFIG^^}" == *7DOLLAR* ]] && [ ! -d "$PKG_PATH/luci-theme-7dollar"
 	echo "luci-theme-7dollar injected (default palette = mist / blue, UT precompile off)"
 fi
 
+# ---- luci-theme-footstrap（第三方主题，*FOOTSTRAP* 配置专用）-----------------
+# 仓库是 monorepo，主题本体在 luci-theme-footstrap/ 子目录里，不是根目录。
+# 它同样带 ucode/template，所以 UT 预编译也要关（同 7dollar 那个坑）。
+if [[ "${WRT_CONFIG^^}" == *FOOTSTRAP* ]] && [ ! -d "$PKG_PATH/luci-theme-footstrap" ]; then
+	echo " "
+	git clone -q --depth=1 --single-branch --branch main \
+		"https://github.com/VizzleTF/luci-theme-footstrap.git" "$TREE_ROOT/footstrap-tmp"
+	if [ -d "$TREE_ROOT/footstrap-tmp/luci-theme-footstrap" ]; then
+		cp -rf "$TREE_ROOT/footstrap-tmp/luci-theme-footstrap" "$PKG_PATH/luci-theme-footstrap"
+		sed -i '/^LUCI_MINIFY_JS:=0/a LUCI_MINIFY_UT:=0' "$PKG_PATH/luci-theme-footstrap/Makefile" 2>/dev/null || true
+		grep -q '^LUCI_MINIFY_UT:=0' "$PKG_PATH/luci-theme-footstrap/Makefile" || \
+			echo 'LUCI_MINIFY_UT:=0' >> "$PKG_PATH/luci-theme-footstrap/Makefile"
+		echo "luci-theme-footstrap injected (UT precompile off)"
+	else
+		echo "::warning::footstrap 仓库里没找到 luci-theme-footstrap 目录，主题没装上"
+	fi
+	rm -rf "$TREE_ROOT/footstrap-tmp"
+fi
+
+# ---- luci-app-pon-status：概览页的 PON 光功率/速率卡片 -----------------------
+# 来自 naoki66/OpenWrt_ONU_CONFIG（pbs05 pon 用户态的一个超集），只取这一个包：
+# 它是 view/status/include/29a_pon.js，状态→概览里自动多一张「光功率 + 端口速率」
+# 卡片，没有 xpon 配置时自己隐藏；数据源就是我们的 ponctl --json。
+# 同仓里的 luci-app-onu 是整套 ONU 管理界面（internet/iptv/voice），会和
+# luci-app-pon 的菜单重叠，需要时再单独加。
+if [[ "${WRT_CONFIG^^}" == PON-* ]] && [ ! -d "$PKG_PATH/luci-app-pon-status" ]; then
+	echo " "
+	git clone -q --depth=1 --single-branch --branch main \
+		"https://github.com/naoki66/OpenWrt_ONU_CONFIG.git" "$TREE_ROOT/onuui-tmp"
+	if [ -d "$TREE_ROOT/onuui-tmp/luci-app-pon-status" ]; then
+		cp -rf "$TREE_ROOT/onuui-tmp/luci-app-pon-status" "$PKG_PATH/"
+		echo "luci-app-pon-status injected (optics + port rate card on the overview page)"
+	else
+		echo "::warning::naoki66 仓库里没找到 luci-app-pon-status"
+	fi
+	rm -rf "$TREE_ROOT/onuui-tmp"
+fi
+
 # ---- luci-app-quickstart：不装 ---------------------------------------------
 # 它只是一个纯前端 SPA，所有接口都靠 iStoreOS 的 Go 守护进程；为了「网络向导」
 # 能保存而把守护进程整套塞进固件，体积和依赖都不划算，现已整体移除。

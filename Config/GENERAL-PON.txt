@@ -73,3 +73,10 @@ CONFIG_PACKAGE_dnsmasq-full=y
 CONFIG_PACKAGE_rtp2httpd=y
 CONFIG_PACKAGE_luci-app-rtp2httpd=y
 CONFIG_PACKAGE_luci-i18n-rtp2httpd-zh-cn=y
+
+#--- frp 内网穿透（只装 frpc 客户端 + LuCI，不装 frps）---
+# frp 走 feeds/packages 里的 net/frp，编译时会顺带编 golang/host 和 node/host，
+# 首次构建会多花十几分钟；后面有 ccache 就快了。
+CONFIG_PACKAGE_frpc=y
+CONFIG_PACKAGE_luci-app-frpc=y
+CONFIG_PACKAGE_luci-i18n-frpc-zh-cn=y
