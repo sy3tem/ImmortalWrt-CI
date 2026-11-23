@@ -121,6 +121,22 @@ BFD="$RK_DIR/armv8/base-files/etc"
 mkdir -p "$BFD/uci-defaults" "$BFD/hotplug.d/iface" "$BFD/init.d" "$BFD/rc.d"
 cp -f "$PATCH_DIR"/base-files/uci-defaults/99-rt28-defaults     "$BFD/uci-defaults/"
 cp -f "$PATCH_DIR"/base-files/uci-defaults/99-set-default-theme "$BFD/uci-defaults/"
+# 统一：LAN 地址 / 主机名 / WiFi 跟 workflow 参数走，别在这份脚本里写死。
+# （历史上 RT28 单独用过 192.168.20.1，后来统一到 10.1，脚本里那串就成了死值。）
+if [ -n "${WRT_IP:-}" ] && [ -n "${WRT_NAME:-}" ]; then
+	sed -i -e "s|192\.168\.10\.1/24|${WRT_IP}/24|g" \
+	       -e "s|hostname='DWRT'|hostname='${WRT_NAME}'|g" \
+	       "$BFD/uci-defaults/99-rt28-defaults"
+fi
+if [ -n "${WRT_SSID:-}" ]; then
+	sed -i -e "s|ssid=DWRT-5G|ssid=${WRT_SSID}-5G|g" \
+	       -e "s|ssid=DWRT|ssid=${WRT_SSID}|g" \
+	       "$BFD/uci-defaults/99-rt28-defaults"
+fi
+if [ -n "${WRT_WORD:-}" ]; then
+	sed -i -e "s|key=12345678|key=${WRT_WORD}|g" "$BFD/uci-defaults/99-rt28-defaults"
+fi
+echo "[7a] 99-rt28-defaults 已按 WRT_IP/WRT_NAME/WRT_SSID 替换（LAN ${WRT_IP:-?}）"
 cp -f "$PATCH_DIR"/base-files/hotplug.d/iface/99-rt28-link-led  "$BFD/hotplug.d/iface/"
 cp -f "$PATCH_DIR"/base-files/init.d/opt-mount                  "$BFD/init.d/"
 chmod +x "$BFD/uci-defaults/"99-* "$BFD/hotplug.d/iface/99-rt28-link-led" "$BFD/init.d/opt-mount"

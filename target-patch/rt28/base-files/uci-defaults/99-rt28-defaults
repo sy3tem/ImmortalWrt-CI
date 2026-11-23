@@ -1,5 +1,6 @@
 #!/bin/sh
-# RT28 defaults: LAN 192.168.10.1/24, hostname DWRT, WiFi DWRT / WPA3 / key 12345678
+# RT28 defaults: LAN / hostname / WiFi 下面这几处是构建时的占位值，
+# Scripts/Inject-RT28.sh 会按 WRT_IP / WRT_NAME / WRT_SSID / WRT_WORD 替换掉
 
 # --- LAN management address (CIDR form; a bare IP makes netifd use /32) ---
 uci set network.lan.ipaddr='192.168.10.1/24'
