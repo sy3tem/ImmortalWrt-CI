@@ -111,11 +111,12 @@ PYEOF
 	fi
 fi
 
-# ---- luci-theme-7dollar（第三方主题，R28S-7DOLLAR 专用）----------------------
-# 官方 feeds 没有这个主题，现场 clone 进 package/。默认配色改成蓝色：
-# 主题自带的 /etc/config/7dollar 写的是 palette 'clay'（陶土），这里换成
-# 'mist'（雾蓝），uci-defaults 里那份 printf 兜底也一起改，保证首次开机就是蓝色。
-if [[ "${WRT_CONFIG^^}" == *7DOLLAR* ]] && [ ! -d "$PKG_PATH/luci-theme-7dollar" ]; then
+# ---- luci-theme-7dollar（第三方主题，全平台默认）----------------------------
+# 官方 feeds 没有这个主题，只要 WRT_THEME=7dollar 就现场 clone 进 package/。
+# 默认配色改成蓝色：主题自带的 /etc/config/7dollar 写的是 palette 'clay'（陶土），
+# 这里换成 'mist'（雾蓝），uci-defaults 里那份 printf 兜底也一起改，
+# 保证首次开机就是蓝色。
+if [ "${WRT_THEME:-}" = "7dollar" ] && [ ! -d "$PKG_PATH/luci-theme-7dollar" ]; then
 	echo " "
 	git clone -q --depth=1 --single-branch --branch main \
 		"https://github.com/itsmaiGe/luci-theme-7dollar.git" "$TREE_ROOT/7dollar-tmp"
@@ -134,25 +135,6 @@ if [[ "${WRT_CONFIG^^}" == *7DOLLAR* ]] && [ ! -d "$PKG_PATH/luci-theme-7dollar"
 	grep -q '^LUCI_MINIFY_UT:=0' "$PKG_PATH/luci-theme-7dollar/Makefile" || \
 		echo 'LUCI_MINIFY_UT:=0' >> "$PKG_PATH/luci-theme-7dollar/Makefile"
 	echo "luci-theme-7dollar injected (default palette = mist / blue, UT precompile off)"
-fi
-
-# ---- luci-theme-footstrap（第三方主题，*FOOTSTRAP* 配置专用）-----------------
-# 仓库是 monorepo，主题本体在 luci-theme-footstrap/ 子目录里，不是根目录。
-# 它同样带 ucode/template，所以 UT 预编译也要关（同 7dollar 那个坑）。
-if [[ "${WRT_CONFIG^^}" == *FOOTSTRAP* ]] && [ ! -d "$PKG_PATH/luci-theme-footstrap" ]; then
-	echo " "
-	git clone -q --depth=1 --single-branch --branch main \
-		"https://github.com/VizzleTF/luci-theme-footstrap.git" "$TREE_ROOT/footstrap-tmp"
-	if [ -d "$TREE_ROOT/footstrap-tmp/luci-theme-footstrap" ]; then
-		cp -rf "$TREE_ROOT/footstrap-tmp/luci-theme-footstrap" "$PKG_PATH/luci-theme-footstrap"
-		sed -i '/^LUCI_MINIFY_JS:=0/a LUCI_MINIFY_UT:=0' "$PKG_PATH/luci-theme-footstrap/Makefile" 2>/dev/null || true
-		grep -q '^LUCI_MINIFY_UT:=0' "$PKG_PATH/luci-theme-footstrap/Makefile" || \
-			echo 'LUCI_MINIFY_UT:=0' >> "$PKG_PATH/luci-theme-footstrap/Makefile"
-		echo "luci-theme-footstrap injected (UT precompile off)"
-	else
-		echo "::warning::footstrap 仓库里没找到 luci-theme-footstrap 目录，主题没装上"
-	fi
-	rm -rf "$TREE_ROOT/footstrap-tmp"
 fi
 
 # ---- luci-app-pon-status：概览页的 PON 光功率/速率卡片 -----------------------
