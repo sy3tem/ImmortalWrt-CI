@@ -52,6 +52,11 @@ CONFIG_PACKAGE_airoha-pond=y
 CONFIG_PACKAGE_luci-app-pon=y
 CONFIG_PACKAGE_luci-i18n-pon-zh-cn=y
 
+#--- 概览页的 PON 光功率 / 端口速率卡片（naoki66/OpenWRT_ONU_CONFIG）---
+# 包由 Scripts/Packages.sh 现场 clone；装了这个，状态→概览里会多一张
+# 「PON 光模块」卡片（收光/发光功率、温度、ONU 状态、PON 流量）。
+CONFIG_PACKAGE_luci-app-pon-status=y
+
 #--- 可选：docker（默认关）---
 # 打开后镜像从 ~45 MB 涨到 ~78 MB。sysupgrade 升级不重排 UBI 卷，
 # fit 卷小于镜像就写不进去、刷完起不来；要开就先确认卷够大，
