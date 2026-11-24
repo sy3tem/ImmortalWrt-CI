@@ -69,6 +69,21 @@ exit 0
 EOF
 chmod +x "$UDIR/00-clean-apk-feeds"
 
+# ---- DHCP 池：从 .2 开始，依次分配 -----------------------------------------
+# OpenWrt 默认 start=100 / limit=150（.100–.249），用久了地址看着乱。
+# 这里改成 .2 起、放到 .249（limit=248），并按 start 顺序发号。
+# 只在 lan 这个 dhcp 段存在时动手，旁路由/单臂这种没 lan 池的场景不影响。
+cat > "$UDIR/97-dhcp-pool" <<'EOF'
+#!/bin/sh
+if uci -q get dhcp.lan >/dev/null 2>&1; then
+	uci set dhcp.lan.start='2'
+	uci set dhcp.lan.limit='248'
+	uci commit dhcp
+fi
+exit 0
+EOF
+chmod +x "$UDIR/97-dhcp-pool"
+
 # ---- IPv6 relay (bridge ONT without DHCPv6-PD) ----
 cat > "$UDIR/98-ipv6-relay" <<'EOF'
 #!/bin/sh
