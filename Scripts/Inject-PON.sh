@@ -1,8 +1,11 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
-# PON 系列的两个小修：
+# PON 系列的几个小修：
 #   1) /sbin/tempinfo —— LuCI 概览的「温度」行来自它，上游没装这个文件
 #   2) luci-app-pon 的 hardware 页 —— ri/bosa 卷读不到内容时前端空值崩溃
+#   3) airoha-xpon 模块参数 xgpon_stock_bwmap=1 —— 联通 XG-PON 卡 O2-O3 的修复
+#   4) /etc/config/pon 默认 OMCC 版本 0x86 —— 同上，界面「兼容性」项
+#   5) uci-defaults 兜底 —— 升级保留配置时也把 omcc_version 拉回 0x86
 #
 # Called from Scripts/Settings.sh with CWD = source tree root.
 
@@ -38,5 +41,56 @@ if [ -n "$HW" ] && [ -f "$HW" ]; then
 else
 	echo "::warning::没找到 luci-app-pon 的 hardware.js，跳过"
 fi
+
+# ---- 3) airoha-xpon 模块参数：xgpon_stock_bwmap=1 ----
+# 联通 XG-PON 线路下默认 bwmap 会让 ONU 停在 O2-O3 注册不上；论坛的临时办法
+# 是手改 /etc/modules.d/airoha-xpon。这里在编译期把参数写进 kmod 包的
+# MODPARAMS，生成的 modules.d 首启就是 "airoha-xpon xgpon_stock_bwmap=1"，
+# 无需刷机后再改文件（sysupgrade 时该文件也会被新包覆盖成带参数版本）。
+XPON_MK=$(find ./feeds -path '*airoha-xpon/Makefile' 2>/dev/null | head -n 1)
+if [ -n "$XPON_MK" ] && [ -f "$XPON_MK" ]; then
+	if grep -q '^MODPARAMS\.airoha-xpon' "$XPON_MK"; then
+		echo "[3] MODPARAMS already present: $XPON_MK"
+	else
+		sed -i '/^define KernelPackage\/airoha-xpon$/i MODPARAMS.airoha-xpon:=xgpon_stock_bwmap=1' "$XPON_MK"
+		if grep -q '^MODPARAMS\.airoha-xpon:=xgpon_stock_bwmap=1$' "$XPON_MK"; then
+			echo "[3] airoha-xpon MODPARAMS added (xgpon_stock_bwmap=1)"
+		else
+			echo "::warning::airoha-xpon Makefile 注入失败，上游可能改了结构"
+		fi
+	fi
+else
+	echo "::warning::没找到 airoha-xpon 的 Makefile，跳过模块参数注入"
+fi
+
+# ---- 4) /etc/config/pon 默认 OMCC 版本 0x86 ----
+# 界面「PON - 配置 - 兼容性 - OMCC 版本」= config omci '<line>_omci' 的
+# option omcc_version，上游默认 0xb0；联通实测要 0x86。
+PONCFG=$(find ./feeds -path '*airoha-ponctl/files/pon.config' 2>/dev/null | head -n 1)
+if [ -n "$PONCFG" ] && [ -f "$PONCFG" ]; then
+	sed -i "s/^\([[:space:]]*\)option omcc_version .*/\1option omcc_version '0x86'/" "$PONCFG"
+	if grep -q "option omcc_version '0x86'" "$PONCFG"; then
+		echo "[4] pon.config omcc_version -> 0x86"
+	else
+		echo "::warning::pon.config 里没找到 omcc_version，上游可能改了键名"
+	fi
+else
+	echo "::warning::没找到 airoha-ponctl/files/pon.config，跳过默认 OMCC 版本"
+fi
+
+# ---- 5) 运行期兜底：sysupgrade 保留旧配置时也把 omcc_version 拉回 0x86 ----
+# 遍历所有 config omci 段（section 名不写死），避免只改到第一个。
+install -d -m 755 ./package/base-files/files/etc/uci-defaults
+cat > ./package/base-files/files/etc/uci-defaults/99-pon-omcc <<'EOS'
+#!/bin/sh
+[ -f /etc/config/pon ] || exit 0
+for s in $(uci -q show pon | sed -n 's/^pon\.\([^.=]*\)=omci$/\1/p'); do
+	uci -q set "pon.$s.omcc_version='0x86'"
+done
+uci -q commit pon
+exit 0
+EOS
+chmod 755 ./package/base-files/files/etc/uci-defaults/99-pon-omcc
+echo "[5] uci-defaults 99-pon-omcc installed"
 
 echo "===== Inject PON extras done ====="
