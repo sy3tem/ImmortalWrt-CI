@@ -40,4 +40,17 @@ ip route replace 224.0.0.0/4 dev "$DEV" 2>/dev/null
 ip route replace 239.0.0.0/8 dev "$DEV" 2>/dev/null
 echo 2 > /proc/sys/net/ipv4/conf/"$DEV"/force_igmp_version 2>/dev/null
 
+# --- 4) rtp2httpd: pin the multicast upstream to this concrete device ---
+# rtp2httpd 自己去发 IGMP join。不锁设备时它按系统默认路由选网卡，join 会从
+# WAN/管理口出去，OLT 侧收不到，播放端只能看到连接建立却没有数据。这里跟随
+# netifd 解析出的真实设备名（VLAN 是 pon0.43、PPPoE 是 pppoe-itv、DHCP 是
+# pon0.43 之类，各不相同，所以不能写死）。
+if [ -f /etc/config/rtp2httpd ] && uci -q get rtp2httpd.@instance[0] >/dev/null 2>&1; then
+	if [ "$(uci -q get rtp2httpd.@instance[0].upstream_interface_multicast)" != "$DEV" ]; then
+		uci -q set "rtp2httpd.@instance[0].upstream_interface_multicast=$DEV"
+		uci -q commit rtp2httpd
+		/etc/init.d/rtp2httpd restart >/dev/null 2>&1
+	fi
+fi
+
 exit 0
