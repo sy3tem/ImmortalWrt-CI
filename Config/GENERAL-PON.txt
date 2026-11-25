@@ -73,6 +73,27 @@ CONFIG_PACKAGE_dnsmasq-full=y
 CONFIG_PACKAGE_rtp2httpd=y
 CONFIG_PACKAGE_luci-app-rtp2httpd=y
 CONFIG_PACKAGE_luci-i18n-rtp2httpd-zh-cn=y
+# 上面解决「软终端 / 手机 / 电视 App 直接播 HTTP」，任何 WiFi 都行。
+# 下面解决「机顶盒要拿专网地址」：把一个 LAN 口（或接在该口上的 AP）变成
+# IPTV 二层专口，盒子自己 DHCP 或 PPPoE 都行 —— 透传不做任何协议改写。
+CONFIG_PACKAGE_kmod-nft-bridge=y
+CONFIG_PACKAGE_luci-app-iptv=y
+CONFIG_PACKAGE_luci-i18n-iptv-zh-cn=y
+
+#--- WAN: DHCP / PPPoE 双协议 ---
+# 本固件不是单机自用：有的环境光猫桥接、由本机 PPPoE 拨号，有的环境光猫已
+# 拨号、本机 DHCP 拿地址。airoha 这个 target 没有定义 DEVICE_TYPE=router，
+# 于是 include/target.mk 里的 DEFAULT_PACKAGES.router（ppp / ppp-mod-pppoe）
+# 不会自动带入 —— 结果就是 LuCI 的协议下拉里根本没有 PPPoE。
+# 显式请求，两条路都能走；具体用哪个由用户在「网络-接口-wan」里选。
+CONFIG_PACKAGE_ppp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
+CONFIG_PACKAGE_luci-proto-ppp=y
+# DHCP 客户端由 netifd + busybox udhcpc 提供，无需额外包；IPv6 侧 odhcp6c
+# 与 odhcpd 同样不由 DEVICE_TYPE 带入，这里一并补齐。
+CONFIG_PACKAGE_odhcp6c=y
+CONFIG_PACKAGE_odhcpd-ipv6only=y
+CONFIG_PACKAGE_luci-proto-ipv6=y
 
 #--- frp 内网穿透（只装 frpc 客户端 + LuCI，不装 frps）---
 # frp 走 feeds/packages 里的 net/frp，编译时会顺带编 golang/host 和 node/host，
