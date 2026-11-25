@@ -41,4 +41,22 @@ cp -f "$PATCH_DIR/97-itv-multicast.hotplug" "$HDIR/97-itv-multicast"
 chmod +x "$HDIR/97-itv-multicast"
 echo "[3] hotplug.d/iface/97-itv-multicast installed"
 
+# ---- 4) rtp2httpd: turn the service on (upstream conffile ships enabled=0) ----
+# 上游 rtp2httpd.config 默认 `option enabled '0'`，包编进去了但守护进程不监听，
+# 用户会以为“装了没用”。这里首启打开；端口沿用 conffile 里的 0.0.0.0:5140。
+# 组播上游接口不写死：由 97-itv-multicast hotplug 在 itv 接口 up 时按实际设备
+# 名写入 upstream_interface_multicast（VLAN / PPPoE / DHCP 设备名都不同）。
+# 没编 rtp2httpd 的平台没有这个 conffile，脚本空转。
+cat > "$UDIR/98-rtp2httpd-enable" <<'EOS'
+#!/bin/sh
+[ -f /etc/config/rtp2httpd ] || exit 0
+if uci -q get rtp2httpd.@instance[0] >/dev/null 2>&1; then
+	uci -q set rtp2httpd.@instance[0].enabled='1'
+	uci -q commit rtp2httpd
+fi
+exit 0
+EOS
+chmod +x "$UDIR/98-rtp2httpd-enable"
+echo "[4] uci-defaults 98-rtp2httpd-enable installed"
+
 echo "===== Inject ITV done ====="
