@@ -42,25 +42,40 @@ else
 	echo "::warning::没找到 luci-app-pon 的 hardware.js，跳过"
 fi
 
-# ---- 3) airoha-xpon 模块参数：xgpon_stock_bwmap=1 ----
-# 联通 XG-PON 线路下默认 bwmap 会让 ONU 停在 O2-O3 注册不上；论坛的临时办法
-# 是手改 /etc/modules.d/airoha-xpon。这里在编译期把参数写进 kmod 包的
-# MODPARAMS，生成的 modules.d 首启就是 "airoha-xpon xgpon_stock_bwmap=1"，
-# 无需刷机后再改文件（sysupgrade 时该文件也会被新包覆盖成带参数版本）。
-XPON_MK=$(find ./feeds -path '*airoha-xpon/Makefile' 2>/dev/null | head -n 1)
-if [ -n "$XPON_MK" ] && [ -f "$XPON_MK" ]; then
-	if grep -q '^MODPARAMS\.airoha-xpon' "$XPON_MK"; then
-		echo "[3] MODPARAMS already present: $XPON_MK"
+# ---- 3) airoha-xpon BWmap 兼容补丁（AN7583 / 华为 OLT）----
+# 现象：XG-PON 在 O2-O3 之间反复重注册（部分华为 OLT 上表现为 O5 后掉线、
+#       再回到 O2_3 重新测距）。根因是开源驱动从不写
+#       AIROHA_XGPON_DBG_BWM_CHK_CTRL（0x0804），BWmap 校验沿用上电或
+#       bootloader 继承值；stock 固件写的是 0x00820000，两边不一致时 OLT 下发
+#       的 O2/O3/O4/O9 授权会被判无效（BWM_O2349_NO_PLOAMU_GRANT、
+#       BWM_ALLOC_HEC_UNCORRECTABLE 置位），状态机就退回去重试。
+#
+# 做法：移植 Zywz95/ponwrt-action 的 patch-airoha-xpon.py ——
+#   · regs.h   加 AIROHA_XGPON_BWM_CHK_CTRL_STOCK = 0x00820000
+#   · xgpon.c  加 bool 模块参数 xgpon_stock_bwmap，并在 MAC reset 释放后
+#              写入该寄存器
+#   · Makefile MODPARAMS 只在 CONFIG_TARGET_airoha_an7583 时置 1
+#              （AN7581 是 GPON，保持继承值，不动）
+#
+# 关键：这个模块参数必须由补丁定义出来。只往 Makefile 加 MODPARAMS 而不打
+# 源码补丁的话，/etc/modules.d/airoha-xpon 里会带上一个内核不认识的参数，
+# kmodloader 走 insmod 直接拿 -EINVAL，模块可能根本装不上。
+XPON_DIR=$(find ./feeds -maxdepth 3 -type d -name 'airoha-xpon' 2>/dev/null | head -n 1)
+if [ -n "$XPON_DIR" ] && [ -f "$XPON_DIR/src/airoha-xpon-xgpon.c" ]; then
+	if grep -q 'module_param(xgpon_stock_bwmap' "$XPON_DIR/src/airoha-xpon-xgpon.c"; then
+		echo "[3] xgpon_stock_bwmap already present: $XPON_DIR"
+	elif python3 "$GITHUB_WORKSPACE/Scripts/patch-airoha-xpon.py" "$XPON_DIR"; then
+		echo "[3] airoha-xpon BWmap patch applied: $XPON_DIR"
 	else
-		sed -i '/^define KernelPackage\/airoha-xpon$/i MODPARAMS.airoha-xpon:=xgpon_stock_bwmap=1' "$XPON_MK"
-		if grep -q '^MODPARAMS\.airoha-xpon:=xgpon_stock_bwmap=1$' "$XPON_MK"; then
-			echo "[3] airoha-xpon MODPARAMS added (xgpon_stock_bwmap=1)"
-		else
-			echo "::warning::airoha-xpon Makefile 注入失败，上游可能改了结构"
-		fi
+		echo "::warning::patch-airoha-xpon.py 执行失败，BWmap 继续沿用继承值"
+	fi
+	if grep -q 'module_param(xgpon_stock_bwmap' "$XPON_DIR/src/airoha-xpon-xgpon.c"; then
+		echo "[3] verified: xgpon_stock_bwmap module_param exists"
+	else
+		echo "::warning::补丁后仍未找到 xgpon_stock_bwmap，参数注入会失败"
 	fi
 else
-	echo "::warning::没找到 airoha-xpon 的 Makefile，跳过模块参数注入"
+	echo "::warning::没找到 airoha-xpon 包目录，跳过 BWmap 补丁"
 fi
 
 # ---- 4) /etc/config/pon 默认 OMCC 版本 0x86 ----
