@@ -517,16 +517,21 @@ jobs:
           [ "$rc" -eq 0 ] && echo "OK: PON stack present in every image"
 
       - name: Upload Fail Image (debug)
-        # 编译/校验失败时把镜像留成 artifact，方便下载到本地复现排查，
-        # 不必再靠猜（这些文件永远不进 Release，仅保留 3 天）。
+        # 编译/校验失败时只留排障材料：配置快照 + 包清单（几 MB 量级），
+        # 不再上传 145-170 MB 的整机镜像。账号的 Actions artifact 配额只有
+        # 500 MB（与 GitHub Packages 共享），一次失败就吃掉三分之一，两三
+        # 次叠加直接触发 90% 告警（2026-11-26 已踩过）。失败现场靠同一运行
+        # 的 Compile Firmware 日志就能定位；确实需要镜像时，把下面 path 临时
+        # 加回 *.img.gz / *.bin 再重跑即可。
         if: failure() && env.WRT_TEST != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: debug-${{env.WRT_CONFIG}}-${{env.WRT_DATE}}
           path: |
-            ./wrt/upload/*.img.gz
-            ./wrt/upload/*.bin
-          retention-days: 3
+            ./wrt/upload/*.txt
+            ./wrt/upload/*.manifest
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Upload Test Config
         # TEST runs never touch the Releases page; hand the generated .config
