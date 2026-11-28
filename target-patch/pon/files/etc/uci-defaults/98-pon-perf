@@ -1,0 +1,6 @@
+#!/bin/sh
+# 把 pon-perf 挂进启动序列，并立刻跑一次（本次开机就生效）。
+[ -x /etc/init.d/pon-perf ] || exit 0
+ln -sf ../init.d/pon-perf /etc/rc.d/S99pon-perf
+/etc/init.d/pon-perf start >/dev/null 2>&1
+exit 0

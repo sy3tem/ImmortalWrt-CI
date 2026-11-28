@@ -1,0 +1,92 @@
+#!/bin/sh
+# PON 系列首启网络固化（一次性；执行完由 uci-defaults 机制自动删除）。
+#
+#  1) 删掉上游默认的 wan6
+#     它是个 DHCPv6 client，直接挂在上行设备（pon0）上。PPPoE 拨号时同一个
+#     二层口会跑两套 IPv6 协商，还持续往运营商路径发 DHCPv6 solicit；
+#     有些局端会把这个当成"多终端在线"，PPPoE 侧直接回认证失败。
+#     删掉后 IPv6 由 PPPoE 会话自带：netifd 会在 ppp 接口上自动生成 wan_6。
+#
+#  2) 建 IPTV 二层通路（VLAN 30）
+#     pon0.30 (802.1q) → br-iptv ← 让出一个 LAN 口
+#     接口 iptv 用 proto none（纯桥接，不做 NAT、不改写报文），机顶盒插到
+#     让出来的那个口就能自己 DHCP / 拨号，等同于运营商原厂「全路由」模式。
+#
+#  3) 建 iptv 防火墙 zone
+#     rtp2httpd 从 br-iptv 发 IGMP join 收组播，需要这个 zone 放行 input。
+#
+# 全部带存在性判断：sysupgrade 保留配置时不覆盖用户已经改过的段。
+
+. /lib/functions.sh
+
+# ---------- 1) wan6 ----------
+if uci -q get network.wan6 >/dev/null 2>&1; then
+	uci -q delete network.wan6
+	echo "98-pon-net: removed network.wan6"
+fi
+
+# PPPoE 会话自带 IPv6（netifd 自动生成 wan_6），不要再去建静态 wan6
+if [ "$(uci -q get network.wan.proto)" = "pppoe" ] && [ -z "$(uci -q get network.wan.ipv6)" ]; then
+	uci -q set network.wan.ipv6='auto'
+fi
+
+# ---------- 2) IPTV VLAN + bridge ----------
+if ! uci -q get network.iptv_vlan >/dev/null 2>&1; then
+	uci set network.iptv_vlan='device'
+	uci set network.iptv_vlan.name='pon0.30'
+	uci set network.iptv_vlan.type='8021q'
+	uci set network.iptv_vlan.ifname='pon0'
+	uci set network.iptv_vlan.vid='30'
+fi
+
+if ! uci -q get network.iptv_bridge >/dev/null 2>&1; then
+	uci set network.iptv_bridge='device'
+	uci set network.iptv_bridge.name='br-iptv'
+	uci set network.iptv_bridge.type='bridge'
+	uci -q add_list network.iptv_bridge.ports='pon0.30'
+fi
+
+# 让出一个 LAN 口（取 br-lan ports 里编号最大的，正常就是最后一个口）。
+# 只剩一个口时不动，避免把唯一的管理口让出去。
+LANDEV=""
+for s in $(uci -q show network | sed -n "s/^network\.\([^.=]*\)\.name='br-lan'$/\1/p"); do
+	LANDEV="$s"
+done
+if [ -n "$LANDEV" ]; then
+	PORTS=$(uci -q get "$LANDEV.ports")
+	if [ -n "$PORTS" ] && [ "$(echo $PORTS | wc -w)" -gt 1 ]; then
+		# 按端口编号取最大（lan1..lan4），不依赖 busybox 的 sort -V
+		LAST=$(for p in $PORTS; do
+			n=$(echo "$p" | sed -n 's/^[A-Za-z_-]*\([0-9][0-9]*\)$/\1/p')
+			[ -n "$n" ] && echo "$n $p"
+		done | sort -n | tail -n1 | cut -d' ' -f2)
+		[ -z "$LAST" ] && LAST=$(echo $PORTS | awk '{print $NF}')
+		if ! uci -q get network.iptv_bridge.ports | grep -qw "$LAST"; then
+			uci -q del_list "$LANDEV.ports=$LAST"
+			uci -q add_list network.iptv_bridge.ports="$LAST"
+			echo "98-pon-net: moved $LAST from br-lan to br-iptv"
+		fi
+	fi
+fi
+
+if ! uci -q get network.iptv >/dev/null 2>&1; then
+	uci set network.iptv='interface'
+	uci set network.iptv.device='br-iptv'
+	uci set network.iptv.proto='none'
+fi
+
+# ---------- 3) firewall zone ----------
+if ! uci -q get firewall.iptv >/dev/null 2>&1; then
+	uci set firewall.iptv='zone'
+	uci set firewall.iptv.name='iptv'
+	uci set firewall.iptv.network='iptv'
+	uci set firewall.iptv.input='ACCEPT'
+	uci set firewall.iptv.output='ACCEPT'
+	uci set firewall.iptv.forward='DROP'
+	uci set firewall.iptv.masq='0'
+	uci set firewall.iptv.mtu_fix='0'
+fi
+
+uci -q commit network
+uci -q commit firewall
+exit 0

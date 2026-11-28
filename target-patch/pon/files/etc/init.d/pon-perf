@@ -1,0 +1,28 @@
+#!/bin/sh /etc/rc.common
+# PPE / 高并发调优 —— 参数取自恩山 zhoufenglin 的 XG-040G-MF 实测分享。
+#
+# 这些值在驱动 probe 后就重置，所以必须每次开机重写一遍，不能只放 uci-defaults。
+#
+#   bind_rate     驱动默认 0x1e（30 pps）：同一条流要走满 30 个包才绑进 PPE。
+#                 短连接、高并发场景根本等不到就结束了，全程软转发。
+#                 改 2 之后绝大多数流在头几个包就进硬件表。
+#   conntrack     数万级连接（PCDN / 下载 / 多终端）时 65536 起步。
+#   backlog       突发流量下 NIC -> 协议栈队列加深到 8192，减少丢包。
+#
+# 64K PPE 硬件表本身要驱动配合（CMA 预留 + 表项计算），不是这里能改的；
+# 刷完可以用 `cat /sys/kernel/debug/ppe/entries | wc -l` 看实际条目数。
+
+START=99
+
+start() {
+	# debugfs 默认挂载点可能还没 mount（OpenWrt 只在需要时挂）
+	mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+
+	if [ -w /sys/kernel/debug/ppe/bind_rate ]; then
+		echo "2 2" > /sys/kernel/debug/ppe/bind_rate 2>/dev/null
+	fi
+
+	modprobe nf_conntrack 2>/dev/null
+	sysctl -q -w net.netfilter.nf_conntrack_max=65536 2>/dev/null
+	sysctl -q -w net.core.netdev_max_backlog=8192 2>/dev/null
+}

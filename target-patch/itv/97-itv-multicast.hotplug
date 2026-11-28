@@ -1,9 +1,14 @@
 #!/bin/sh
 # ITV (IPTV) multicast — hotplug fallback.
 #
-# The itv interface may be created / renamed / re-upped AFTER first boot
+# 同一个脚本同时服务两套命名：
+#   itv  —— 通用平台（R28S / JDC 等）上手工建的 IPTV 接口
+#   iptv —— PON 系列首启固化的接口（br-iptv，见 98-pon-net）
+# 两者行为完全一致：建 zone、锁组播路由、锁 IGMPv2、锁 rtp2httpd 上游。
+#
+# The itv/iptv interface may be created / renamed / re-upped AFTER first boot
 # (VLAN, PPPoE, DHCP, static). Whenever that happens this script re-asserts:
-#   - the itv firewall zone (zone is a container, built even if the iface is down)
+#   - the matching firewall zone (zone is a container, built even if iface is down)
 #   - the multicast route 224.0.0.0/4 (and 239.0.0.0/8) pointing at the real DEV
 #   - force_igmp_version=2 on that DEV
 #
@@ -14,25 +19,33 @@ case "$ACTION" in
 	ifup|ifupdate|update) ;;
 	*) exit 0 ;;
 esac
-[ "$INTERFACE" = "itv" ] || exit 0
+
+case "$INTERFACE" in
+	itv|iptv) ;;
+	*) exit 0 ;;
+esac
+
+ZN="$INTERFACE"
 
 # --- 1) zone first (unconditional, idempotent) ---
-if ! uci -q get firewall.itv >/dev/null; then
-	uci set firewall.itv='zone'
-	uci set firewall.itv.name='itv'
-	uci set firewall.itv.network='itv'
-	uci set firewall.itv.input='ACCEPT'
-	uci set firewall.itv.output='ACCEPT'
-	uci set firewall.itv.forward='DROP'
-	uci set firewall.itv.masq='0'
-	uci set firewall.itv.mtu_fix='0'
+if ! uci -q get "firewall.$ZN" >/dev/null; then
+	uci set "firewall.$ZN"='zone'
+	uci set "firewall.$ZN.name"="$ZN"
+	uci set "firewall.$ZN.network"="$ZN"
+	uci set "firewall.$ZN.input"='ACCEPT'
+	uci set "firewall.$ZN.output"='ACCEPT'
+	uci set "firewall.$ZN.forward"='DROP'
+	uci set "firewall.$ZN.masq"='0'
+	uci set "firewall.$ZN.mtu_fix"='0'
 	uci commit firewall
 	/etc/init.d/firewall reload >/dev/null 2>&1
 fi
 
 # --- 2) resolve the real device: runtime l3_device first, then uci device ---
-DEV=$(ubus call network.interface.itv status 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
-[ -z "$DEV" ] && DEV=$(uci -q get network.itv.device 2>/dev/null)
+# proto none（纯桥接）的接口没有 L3 地址，l3_device 可能为空，必须回落到
+# network.<iface>.device(= br-iptv)。
+DEV=$(ubus call "network.interface.$INTERFACE" status 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
+[ -z "$DEV" ] && DEV=$(uci -q get "network.$INTERFACE.device" 2>/dev/null)
 [ -z "$DEV" ] && exit 0   # zone already handled above
 
 # --- 3) multicast route + IGMPv2 on the concrete device ---
@@ -43,8 +56,8 @@ echo 2 > /proc/sys/net/ipv4/conf/"$DEV"/force_igmp_version 2>/dev/null
 # --- 4) rtp2httpd: pin the multicast upstream to this concrete device ---
 # rtp2httpd 自己去发 IGMP join。不锁设备时它按系统默认路由选网卡，join 会从
 # WAN/管理口出去，OLT 侧收不到，播放端只能看到连接建立却没有数据。这里跟随
-# netifd 解析出的真实设备名（VLAN 是 pon0.43、PPPoE 是 pppoe-itv、DHCP 是
-# pon0.43 之类，各不相同，所以不能写死）。
+# netifd 解析出的真实设备名（VLAN 是 pon0.30、PPPoE 是 pppoe-itv、桥是
+# br-iptv，各不相同，所以不能写死）。
 if [ -f /etc/config/rtp2httpd ] && uci -q get rtp2httpd.@instance[0] >/dev/null 2>&1; then
 	if [ "$(uci -q get rtp2httpd.@instance[0].upstream_interface_multicast)" != "$DEV" ]; then
 		uci -q set "rtp2httpd.@instance[0].upstream_interface_multicast=$DEV"
