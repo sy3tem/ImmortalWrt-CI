@@ -125,4 +125,17 @@ install -D -m 755 "$GITHUB_WORKSPACE/target-patch/pon/files/etc/uci-defaults/98-
 	./package/base-files/files/etc/uci-defaults/98-pon-perf
 echo "[7] pon-perf installed (bind_rate=2, conntrack 65536, backlog 8192)"
 
+# ---- 8) PPE DRAM 表扩到 64K 条（对齐原厂 hw_nat）----
+# 上游默认 8K SRAM + 16K DRAM；连接数过 24K 后新流插不进硬件表，全退回软转发。
+# 补丁只改 airoha_eth.h 的一个宏（64K 对应寄存器值 6，3 bit 字段放得下）。
+# 表本体 5.8MB 走 CMA，见 Config/GENERAL-PON.txt 里的 CONFIG_CMA_SIZE_MBYTES。
+PPE_PATCH="$GITHUB_WORKSPACE/target-patch/pon/931-net-airoha-ppe-64k-dram-table.patch"
+PPE_DIR=./target/linux/airoha/patches-6.18
+if [ -f "$PPE_PATCH" ] && [ -d "$PPE_DIR" ]; then
+	install -m 644 "$PPE_PATCH" "$PPE_DIR/"
+	echo "[8] PPE 64K DRAM table patch installed -> $PPE_DIR"
+else
+	echo "::warning::PPE 补丁或 patches-6.18 目录不存在，保持 24K 默认表"
+fi
+
 echo "===== Inject PON extras done ====="

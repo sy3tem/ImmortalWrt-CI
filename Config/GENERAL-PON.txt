@@ -27,6 +27,10 @@ CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256
 CONFIG_TARGET_UBIFS_FREE_SPACE_FIXUP=y
 
 #--- kernel / netfilter ---
+# PPE 硬件加速表：驱动侧由 target-patch/pon/931-*.patch 把 DRAM 表从 16K 扩到
+# 64K 条（对齐原厂 hw_nat），表本体约 5.8MB 从 CMA 出，这里把 CMA 固定成
+# 16MB，避免被其它驱动按需抢占后 dmam_alloc_coherent 失败。
+CONFIG_CMA_SIZE_MBYTES=16
 CONFIG_PACKAGE_kmod-fuse=y
 CONFIG_PACKAGE_kmod-inet-diag=y
 CONFIG_PACKAGE_kmod-mtd-rw=y
