@@ -17,7 +17,7 @@
 
 # --- 2) zone (idempotent) ---
 # 只在 network.itv 存在时建：PON 系列用的是 iptv 接口（br-iptv），它的 zone
-# 由 98-pon-net 一起建，这里不要多留一个没有接口的 itv zone。
+# 由 97-pon-net 一起建，这里不要多留一个没有接口的 itv zone。
 if uci -q get network.itv >/dev/null 2>&1 && ! uci -q get firewall.itv >/dev/null 2>&1; then
 	uci set firewall.itv='zone'
 	uci set firewall.itv.name='itv'

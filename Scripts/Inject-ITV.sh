@@ -18,11 +18,11 @@ FW_CONF="./package/network/config/firewall/files/firewall.config"
 echo "===== Inject ITV (IPTV) support ====="
 
 # ---- 1) firewall zone baked into the shipped config ----
-# PON 系列跳过：那边接口叫 iptv（br-iptv），zone 由 98-pon-net 首启时一起建，
+# PON 系列跳过：那边接口叫 iptv（br-iptv），zone 由 97-pon-net 首启时一起建，
 # 这里再塞一个没有接口的 itv zone 只会在防火墙页多出一行空 zone。
 case "${WRT_CONFIG,,}" in
 pon-*)
-	echo "[1] PON: skip static itv zone (iptv zone comes from 98-pon-net)"
+	echo "[1] PON: skip static itv zone (iptv zone comes from 97-pon-net)"
 	;;
 *)
 	if [ -f "$FW_CONF" ] && ! grep -q "^	option name		itv$" "$FW_CONF"; then

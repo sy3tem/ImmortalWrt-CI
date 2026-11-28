@@ -3,7 +3,7 @@
 #
 # 同一个脚本同时服务两套命名：
 #   itv  —— 通用平台（R28S / JDC 等）上手工建的 IPTV 接口
-#   iptv —— PON 系列首启固化的接口（br-iptv，见 98-pon-net）
+#   iptv —— PON 系列首启固化的接口（br-iptv，见 97-pon-net）
 # 两者行为完全一致：建 zone、锁组播路由、锁 IGMPv2、锁 rtp2httpd 上游。
 #
 # The itv/iptv interface may be created / renamed / re-upped AFTER first boot

@@ -112,9 +112,9 @@ echo "[5] uci-defaults 99-pon-omcc installed"
 # 以前这块交给 luci-app-iptv，但那个包只在 LuCI 里做一次性配置，刷完还得
 # 手点一遍；而且它的接口名/zone 与 Inject-ITV.sh 那套重叠。现在两条都在
 # 首启脚本里定死，包本身也一并去掉了（见 Config/GENERAL-PON.txt）。
-install -D -m 755 "$GITHUB_WORKSPACE/target-patch/pon/files/etc/uci-defaults/98-pon-net" \
-	./package/base-files/files/etc/uci-defaults/98-pon-net
-echo "[6] uci-defaults 98-pon-net installed (wan6 removed, pon0.30 -> br-iptv)"
+install -D -m 755 "$GITHUB_WORKSPACE/target-patch/pon/files/etc/uci-defaults/97-pon-net" \
+	./package/base-files/files/etc/uci-defaults/97-pon-net
+echo "[6] uci-defaults 97-pon-net installed (wan6 removed, pon0.30 -> br-iptv)"
 
 # ---- 7) PPE / 高并发调优 ----
 # bind_rate 在驱动 probe 后会被重置成 0x1e，所以做成 init 服务每次开机重写，

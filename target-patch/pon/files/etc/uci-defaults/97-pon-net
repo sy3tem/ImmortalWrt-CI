@@ -20,14 +20,28 @@
 . /lib/functions.sh
 
 # ---------- 1) wan6 ----------
+# 文件名 97 而不是 98：必须排在 98-ipv6-relay 之前。那个脚本一旦看到
+# network.wan6 就把 dhcp.lan 改成 relay 模式；wan6 被删掉之后 LAN 就没有
+# 上游可 relay，IPv6 会整段哑掉。
 if uci -q get network.wan6 >/dev/null 2>&1; then
 	uci -q delete network.wan6
-	echo "98-pon-net: removed network.wan6"
+	echo "97-pon-net: removed network.wan6"
 fi
 
 # PPPoE 会话自带 IPv6（netifd 自动生成 wan_6），不要再去建静态 wan6
-if [ "$(uci -q get network.wan.proto)" = "pppoe" ] && [ -z "$(uci -q get network.wan.ipv6)" ]; then
-	uci -q set network.wan.ipv6='auto'
+if [ "$(uci -q get network.wan.proto)" = "pppoe" ]; then
+	[ -z "$(uci -q get network.wan.ipv6)" ] && uci -q set network.wan.ipv6='auto'
+
+	# 升级保留配置时 dhcp.lan 可能还是上一版留下的 relay，删掉 wan6 后
+	# relay 无上游，必须退回 server 模式（IPv6 走 PPPoE 的 PD）。
+	if [ "$(uci -q get dhcp.lan.ra)" = "relay" ]; then
+		uci -q delete dhcp.lan.ra
+		uci -q delete dhcp.lan.dhcpv6
+		uci -q delete dhcp.lan.ndp
+		echo "97-pon-net: dhcp.lan relay -> server (PPPoE carries IPv6)"
+	fi
+	uci -q delete dhcp.wan6
+	uci -q commit dhcp
 fi
 
 # ---------- 2) IPTV VLAN + bridge ----------
@@ -64,7 +78,7 @@ if [ -n "$LANDEV" ]; then
 		if ! uci -q get network.iptv_bridge.ports | grep -qw "$LAST"; then
 			uci -q del_list "$LANDEV.ports=$LAST"
 			uci -q add_list network.iptv_bridge.ports="$LAST"
-			echo "98-pon-net: moved $LAST from br-lan to br-iptv"
+			echo "97-pon-net: moved $LAST from br-lan to br-iptv"
 		fi
 	fi
 fi

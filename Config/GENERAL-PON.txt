@@ -82,7 +82,7 @@ CONFIG_PACKAGE_luci-i18n-rtp2httpd-zh-cn=y
 # 「机顶盒要拿专网地址」这部分不再用 luci-app-iptv：
 # 那个包只在 LuCI 里做一次性配置，刷机后还得手动点一遍，而且它的 zone /
 # hotplug 又和 Inject-ITV.sh 里那套重叠。现在改成首启固化，见
-# target-patch/pon/files/etc/uci-defaults/98-pon-net：
+# target-patch/pon/files/etc/uci-defaults/97-pon-net：
 #   pon0.30 (VLAN 30) → br-iptv ← 让出的最后一个 LAN 口
 #   接口 iptv 用 proto none，纯二层透传，盒子自己 DHCP / 拨号都行。
 # 所以这里不再需要 kmod-nft-bridge / luci-app-iptv。
